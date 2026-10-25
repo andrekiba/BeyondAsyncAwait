@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>BeyondAsyncAwait.Act06</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Reactive" />
+    <PackageReference Include="System.Reactive.Async" />
+    <PackageReference Include="System.Interactive.Async" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Demo.Shared\Demo.Shared.csproj" />
+  </ItemGroup>
+
+</Project>

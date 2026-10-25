@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Same sources as RuntimeAsync.Classic, compiled with runtime-async=on (see Directory.Build.targets). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RuntimeAsync>true</RuntimeAsync>
+    <RootNamespace>BeyondAsyncAwait.RuntimeAsyncDemos</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Code\**\*.cs" LinkBase="Code" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\Demo.Shared\Demo.Shared.csproj" />
+  </ItemGroup>
+
+</Project>

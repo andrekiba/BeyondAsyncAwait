@@ -1,0 +1,13 @@
+<Project>
+
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <RootNamespace>BeyondAsyncAwait</RootNamespace>
+    <!-- The demos deliberately contain broken code: keep the analyzers quiet about the intentional traps. -->
+    <NoWarn>$(NoWarn);CS1998;CA2012;VSTHRD002;VSTHRD100;VSTHRD101</NoWarn>
+  </PropertyGroup>
+
+</Project>

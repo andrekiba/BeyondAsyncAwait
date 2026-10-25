@@ -1,0 +1,15 @@
+<Project>
+
+  <!--
+    Runtime Async (.NET 11): on by default for every project.
+    Turn it off for a single project with <RuntimeAsync>false</RuntimeAsync>,
+    or for a whole build with: dotnet build -p:RuntimeAsync=false
+    Defined in a .targets file so that a value set in the project body is already visible here.
+  -->
+  <PropertyGroup>
+    <RuntimeAsync Condition="'$(RuntimeAsync)' == ''">true</RuntimeAsync>
+    <Features Condition="'$(RuntimeAsync)' == 'true'">$(Features);runtime-async=on</Features>
+    <DefineConstants Condition="'$(RuntimeAsync)' == 'true'">$(DefineConstants);RUNTIME_ASYNC</DefineConstants>
+  </PropertyGroup>
+
+</Project>

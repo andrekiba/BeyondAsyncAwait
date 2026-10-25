@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Same sources as RuntimeAsync.Native, compiled with the classic compiler-generated state machines. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RuntimeAsync>false</RuntimeAsync>
+    <RootNamespace>BeyondAsyncAwait.RuntimeAsyncDemos</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Code\**\*.cs" LinkBase="Code" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\Demo.Shared\Demo.Shared.csproj" />
+  </ItemGroup>
+
+</Project>
