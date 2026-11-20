@@ -8,7 +8,7 @@ Codice e demo della sessione deep dive **WPC 2026**: primitive asincrone in .NET
 
 ## Requisiti
 
-- **.NET 11 SDK** (RC2 o successivo: `global.json` accetta qualsiasi feature band 11.0.1xx, GA inclusa)
+- **.NET 11 SDK** 11.0.100 o successivo (`global.json` accetta qualsiasi SDK 11.0 stabile, niente preview)
 - nessuna dipendenza esterna: il "provider di quotazioni" lento e instabile è simulato (`FakeQuoteProvider`)
 
 ## Come funzionano le demo
@@ -69,16 +69,16 @@ dotnet run -c Release --project benchmarks/BeyondAsyncAwait.Benchmarks -- --filt
 
 > Le state machine sono `class` in Debug e `struct` in Release: per mostrare la versione "vera" usa `-c Release`.
 
-Risultati **indicativi** (BenchmarkDotNet `--quick`, i7-11800H, .NET 11 RC2: rifalli sulla macchina della demo, senza `--quick`):
+Risultati **indicativi** (BenchmarkDotNet `--quick`, i7-11800H, .NET 11.0.0: rifalli sulla macchina della demo, senza `--quick`):
 
 | Benchmark | StateMachine | RuntimeAsync |
 |---|---|---|
-| 10 await che completano in modo sincrono | 64 ns, 0 B | **35 ns**, 0 B |
-| 10 await con sospensione reale | 1324 ns, 1213 B | **535 ns, 672 B** |
-| pass-through con `await` | 591 ns, 191 B | 378 ns, 168 B |
-| pass-through elided (`return task`) | 408 ns, 96 B | 352 ns, 104 B |
+| 10 await che completano in modo sincrono | 62 ns, 0 B | **37 ns**, 0 B |
+| 10 await con sospensione reale | 1286 ns, 1204 B | **508 ns, 672 B** |
+| pass-through con `await` | 517 ns, 191 B | 364 ns, 168 B |
+| pass-through elided (`return task`) | 411 ns, 96 B | 334 ns, 104 B |
 
-Con le state machine l'elision faceva risparmiare ~30%; con Runtime Async la differenza si riduce a pochi punti, e restano solo le trappole semantiche (demo 0.3).
+Con le state machine l'elision faceva risparmiare ~20%; con Runtime Async meno del 10%, e restano solo le trappole semantiche (demo 0.3).
 
 ### Demo 1 — TaskCompletionSource: il mattone
 
@@ -117,11 +117,11 @@ Con le state machine l'elision faceva risparmiare ~30%; con Runtime Async la dif
 
 | Benchmark | StateMachine | RuntimeAsync |
 |---|---|---|
-| cache hit, `Task<T>` awaitato | 19 ns, 81 B | **12 ns, 0 B** |
-| cache hit, `ValueTask<T>` awaitato | 19 ns, 1 B | 12 ns, 0 B |
-| cache hit, `Task<T>` tenuto in un campo | 21 ns, 80 B | 21 ns, 80 B |
-| sospensione, `ValueTask<T>` | 388 ns, 104 B | 343 ns, 104 B |
-| sospensione, `PoolingAsyncValueTaskMethodBuilder` | 410 ns, **0 B** | 352 ns, **104 B** |
+| cache hit, `Task<T>` awaitato | 18 ns, 81 B | **11 ns, 0 B** |
+| cache hit, `ValueTask<T>` awaitato | 17 ns, 1 B | 11 ns, 0 B |
+| cache hit, `Task<T>` tenuto in un campo | 22 ns, 80 B | 24 ns, 80 B |
+| sospensione, `ValueTask<T>` | 426 ns, 104 B | 342 ns, 104 B |
+| sospensione, `PoolingAsyncValueTaskMethodBuilder` | 422 ns, **0 B** | 353 ns, **104 B** |
 
 L'ultima riga: i metodi con il pooling builder escono da Runtime Async, e nel job RuntimeAsync il vantaggio del pooling non si vede più. Le due ottimizzazioni non si sommano.
 
@@ -164,7 +164,7 @@ L'ultima riga: i metodi con il pooling builder escono da Runtime Async, e nel jo
 
 ## Note
 
-- **Runtime Async** in .NET 11 è ancora una *preview feature* (opt-in con `Features`); le librerie del runtime sono già compilate così.
+- **Runtime Async** in .NET 11 GA resta *opt-in* per il tuo codice: senza `<Features>runtime-async=on</Features>` il compilatore genera ancora le state machine (non serve più `EnablePreviewFeatures`). Le librerie del runtime sono già compilate così. La documentazione cita anche `<UseRuntimeAsync>false</UseRuntimeAsync>` come opt-out, ma l'SDK 11.0.100 non lo usa: in questo repo si usa `-p:RuntimeAsync=false`.
 - **AsyncRx.NET** (`System.Reactive.Async`) è sperimentale: l'unica build su NuGet è `6.0.0-alpha.18` (2023), che funziona con Rx 7.
 - **BenchmarkDotNet 0.15.x non riconosce .NET 11** (`GetRuntimeVersion not implemented for NotRecognized`): il repo usa `0.16.0-preview.2`.
 - I benchmark girano nella stessa build del harness di BenchmarkDotNet, che quindi è compilato anch'esso con o senza Runtime Async: un `Task` restituito al harness viene awaitato direttamente e con Runtime Async non viene materializzato.

@@ -3,8 +3,8 @@
   <ItemGroup>
     <!-- 0.15.x doesn't recognize .NET 11 ("GetRuntimeVersion not implemented for NotRecognized"). -->
     <PackageVersion Include="BenchmarkDotNet" Version="0.16.0-preview.2" />
-    <PackageVersion Include="Microsoft.Extensions.Caching.Hybrid" Version="10.11.0" />
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.Extensions.Caching.Hybrid" Version="11.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="11.0.0" />
     <!-- Ix 7: IObservable<T>.ToAsyncEnumerable() lives here (System.Linq.AsyncEnumerableEx). -->
     <PackageVersion Include="System.Interactive.Async" Version="7.0.1" />
     <PackageVersion Include="System.Reactive" Version="7.0.0" />
