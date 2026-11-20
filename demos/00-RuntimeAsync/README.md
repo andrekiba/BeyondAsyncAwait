@@ -39,7 +39,7 @@ public static async Task<decimal> GetGrossPriceAsync(FakeQuoteProvider provider,
 }
 ```
 
-Lo scenario legge l'IL via reflection con un piccolo decoder ([IlReader.cs](Code/IlReader.cs)), così sul palco non serve ILSpy.
+Lo scenario legge l'IL via reflection con un piccolo decoder ([IlReader.cs](Code/IlReader.cs)), così non serve aprire ILSpy.
 
 **Classic.** `GetGrossPriceAsync` diventa uno stub: inizializza la state machine `<GetGrossPriceAsync>d__0`, copia i parametri nei suoi campi, chiama `AsyncTaskMethodBuilder<decimal>.Start` e restituisce `builder.Task`.
 Il codice vero sta in `MoveNext`, con il protocollo dell'awaiter scritto per esteso:
@@ -157,7 +157,7 @@ Valgono allo stesso modo le altre trappole dell'elision: nel metodo senza `async
 In [benchmarks/BeyondAsyncAwait.Benchmarks](../../benchmarks/BeyondAsyncAwait.Benchmarks) ogni benchmark gira due volte: job `StateMachine` (baseline) e job `RuntimeAsync`.
 
 ```bash
-dotnet run -c Release --project benchmarks/BeyondAsyncAwait.Benchmarks -- --filter *AwaitChain* *Elision*
+dotnet run -c Release --project benchmarks/BeyondAsyncAwait.Benchmarks -- --filter '*AwaitChain*' '*Elision*'
 ```
 
 - `AwaitChainBenchmarks`: una catena di 10 metodi async. In `CompletesSynchronously` la foglia non sospende mai; in `Suspends` fa `Task.Yield`, quindi ogni livello della catena sospende e riprende.

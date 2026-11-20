@@ -17,21 +17,27 @@
     <Project Path="demos/00-RuntimeAsync/RuntimeAsync.Native/RuntimeAsync.Native.csproj" />
   </Folder>
   <Folder Name="/01-TaskCompletionSource/">
+    <File Path="demos/01-TaskCompletionSource/README.md" />
     <Project Path="demos/01-TaskCompletionSource/Demo01.TaskCompletionSource.csproj" />
   </Folder>
   <Folder Name="/02-AsyncCaching/">
+    <File Path="demos/02-AsyncCaching/README.md" />
     <Project Path="demos/02-AsyncCaching/Demo02.AsyncCaching.csproj" />
   </Folder>
   <Folder Name="/03-ValueTask/">
+    <File Path="demos/03-ValueTask/README.md" />
     <Project Path="demos/03-ValueTask/Demo03.ValueTask.csproj" />
   </Folder>
   <Folder Name="/04-AsyncContext/">
+    <File Path="demos/04-AsyncContext/README.md" />
     <Project Path="demos/04-AsyncContext/Demo04.AsyncContext.csproj" />
   </Folder>
   <Folder Name="/05-Channels/">
+    <File Path="demos/05-Channels/README.md" />
     <Project Path="demos/05-Channels/Demo05.Channels.csproj" />
   </Folder>
   <Folder Name="/06-RxInterop/">
+    <File Path="demos/06-RxInterop/README.md" />
     <Project Path="demos/06-RxInterop/Demo06.RxInterop.csproj" />
   </Folder>
   <Folder Name="/benchmarks/">
