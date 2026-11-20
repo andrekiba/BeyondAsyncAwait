@@ -4,12 +4,12 @@ using System.Reactive.Subjects;
 using System.Threading.Channels;
 using BeyondAsyncAwait.Shared;
 
-namespace BeyondAsyncAwait.Act06;
+namespace BeyondAsyncAwait.Demo06;
 
 /// <summary>
 /// 6.6 — AsyncRx doesn't make backpressure disappear, it moves it to the boundary.
 /// A hot classic source (Subject.OnNext is void) can't await anything: ToAsyncObservable() blocks the
-/// producer's thread until the async observer is done (sync-over-async). The fix is the same as Act 5:
+/// producer's thread until the async observer is done (sync-over-async). The fix is the same as Demo 5:
 /// an explicit bounded Channel at the boundary, where you choose the policy (here: DropOldest).
 /// </summary>
 sealed class AsyncRxBridgeDemo : Demo

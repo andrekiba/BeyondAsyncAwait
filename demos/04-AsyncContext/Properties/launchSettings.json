@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json.schemastore.org/launchsettings.json",
+  "profiles": {
+    "menu": {
+      "commandName": "Project"
+    },
+    "4.1 asynclocal-flow": {
+      "commandName": "Project",
+      "commandLineArgs": "4.1"
+    },
+    "4.2 context-leak": {
+      "commandName": "Project",
+      "commandLineArgs": "4.2"
+    },
+    "4.3 async-dispose": {
+      "commandName": "Project",
+      "commandLineArgs": "4.3"
+    }
+  }
+}

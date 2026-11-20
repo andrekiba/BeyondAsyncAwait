@@ -1,7 +1,7 @@
 using System.Reactive.Linq;
 using BeyondAsyncAwait.Shared;
 
-namespace BeyondAsyncAwait.Act06;
+namespace BeyondAsyncAwait.Demo06;
 
 /// <summary>
 /// 6.5 — AsyncRx.NET (IAsyncObservable&lt;T&gt;, experimental): the same consumer, two types.

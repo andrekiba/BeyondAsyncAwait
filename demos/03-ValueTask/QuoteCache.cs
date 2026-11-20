@@ -1,6 +1,6 @@
 using BeyondAsyncAwait.Shared;
 
-namespace BeyondAsyncAwait.Act03;
+namespace BeyondAsyncAwait.Demo03;
 
 /// <summary>
 /// A price cache in front of the provider: the hit path completes synchronously.

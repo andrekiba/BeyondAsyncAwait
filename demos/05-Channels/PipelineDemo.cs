@@ -3,7 +3,7 @@ using System.Diagnostics;
 using System.Threading.Channels;
 using BeyondAsyncAwait.Shared;
 
-namespace BeyondAsyncAwait.Act05;
+namespace BeyondAsyncAwait.Demo05;
 
 /// <summary>
 /// 5.2 — source → parse → enrich (provider lookup) → persist, 4 workers per stage, bounded channels in between.
@@ -27,7 +27,7 @@ sealed class PipelineDemo : Demo
     {
         Out.Dim($"{Messages} messages, poison message #{PoisonId}, {Workers} workers per stage, Bounded({ChannelCapacity}) between stages");
         Out.Dim("Stage channels: SingleReader/SingleWriter = false (4 workers each side),");
-        Out.Dim("AllowSynchronousContinuations = false (the default: same trap as RunContinuationsAsynchronously in Act 1).");
+        Out.Dim("AllowSynchronousContinuations = false (the default: same trap as RunContinuationsAsynchronously in Demo 1).");
 
         Out.Section("Scenario 1: a poison message, then a normal end of input");
         await RunScenarioAsync(variant, providerDown: false);

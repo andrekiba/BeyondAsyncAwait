@@ -1,4 +1,4 @@
-using BeyondAsyncAwait.Act06;
+using BeyondAsyncAwait.Demo06;
 using BeyondAsyncAwait.Shared;
 
 return await DemoHost.RunAsync(args,

@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using BeyondAsyncAwait.Shared;
 
-namespace BeyondAsyncAwait.Act02;
+namespace BeyondAsyncAwait.Demo02;
 
 /// <summary>
 /// 2.1 — 200 concurrent requests for the same cold key.

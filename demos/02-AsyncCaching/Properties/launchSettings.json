@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json.schemastore.org/launchsettings.json",
+  "profiles": {
+    "menu": {
+      "commandName": "Project"
+    },
+    "2.1 cache-stampede": {
+      "commandName": "Project",
+      "commandLineArgs": "2.1"
+    },
+    "2.2 failure-caching": {
+      "commandName": "Project",
+      "commandLineArgs": "2.2"
+    },
+    "2.3 shared-cancellation": {
+      "commandName": "Project",
+      "commandLineArgs": "2.3"
+    },
+    "2.4 factory-context": {
+      "commandName": "Project",
+      "commandLineArgs": "2.4"
+    },
+    "2.5 hybrid-cache": {
+      "commandName": "Project",
+      "commandLineArgs": "2.5"
+    }
+  }
+}

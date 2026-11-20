@@ -1,6 +1,6 @@
 using BeyondAsyncAwait.Shared;
 
-namespace BeyondAsyncAwait.Act04;
+namespace BeyondAsyncAwait.Demo04;
 
 /// <summary>
 /// 4.1 — AsyncLocal flows down, never back up. An async method runs on a copy-on-write ExecutionContext:

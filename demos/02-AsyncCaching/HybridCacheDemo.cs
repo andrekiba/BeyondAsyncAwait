@@ -2,7 +2,7 @@ using BeyondAsyncAwait.Shared;
 using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace BeyondAsyncAwait.Act02;
+namespace BeyondAsyncAwait.Demo02;
 
 /// <summary>
 /// 2.5 — In production, use the one that exists: HybridCache (.NET 9+) has stampede protection built in.

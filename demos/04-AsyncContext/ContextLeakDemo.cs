@@ -1,6 +1,6 @@
 using BeyondAsyncAwait.Shared;
 
-namespace BeyondAsyncAwait.Act04;
+namespace BeyondAsyncAwait.Demo04;
 
 /// <summary>
 /// 4.2 — A singleton starts its background loop lazily, inside the first request that needs it. Task.Run, Timer and

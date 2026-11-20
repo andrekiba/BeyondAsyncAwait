@@ -1,10 +1,10 @@
 using System.Reactive.Linq;
 using BeyondAsyncAwait.Shared;
 
-namespace BeyondAsyncAwait.Act06;
+namespace BeyondAsyncAwait.Demo06;
 
 /// <summary>
-/// 6.4 — Act 2's problem (one value, many consumers) in Rx: an auto-refreshing async cache in one expression.
+/// 6.4 — Demo 2's problem (one value, many consumers) in Rx: an auto-refreshing async cache in one expression.
 /// Timer → FromAsync(load) → Switch → Replay(1), consumed with `await config.FirstAsync()`.
 /// With RefCount every await connects and disconnects: the replayed old value answers synchronously,
 /// the subscriber leaves, the connection drops before the timer can tick — the cache never refreshes.

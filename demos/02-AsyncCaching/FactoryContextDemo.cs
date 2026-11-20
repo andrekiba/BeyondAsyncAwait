@@ -1,6 +1,6 @@
 using BeyondAsyncAwait.Shared;
 
-namespace BeyondAsyncAwait.Act02;
+namespace BeyondAsyncAwait.Demo02;
 
 /// <summary>
 /// 2.4 — Trap 3 of a cached Task: Lazy runs the factory on the first caller's thread, inside its

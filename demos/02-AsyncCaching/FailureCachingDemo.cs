@@ -1,6 +1,6 @@
 using BeyondAsyncAwait.Shared;
 
-namespace BeyondAsyncAwait.Act02;
+namespace BeyondAsyncAwait.Demo02;
 
 /// <summary>
 /// 2.2 — Trap 1 of a cached Task: a faulted Task is a perfectly valid value, so the cache keeps it.

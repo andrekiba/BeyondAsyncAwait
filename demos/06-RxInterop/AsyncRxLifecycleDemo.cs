@@ -2,7 +2,7 @@ using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using BeyondAsyncAwait.Shared;
 
-namespace BeyondAsyncAwait.Act06;
+namespace BeyondAsyncAwait.Demo06;
 
 /// <summary>
 /// 6.7 — Subscriptions with async setup and teardown: connect to a broker, commit offsets when done.

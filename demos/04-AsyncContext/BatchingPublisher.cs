@@ -1,7 +1,7 @@
 using System.Threading.Channels;
 using BeyondAsyncAwait.Shared;
 
-namespace BeyondAsyncAwait.Act04;
+namespace BeyondAsyncAwait.Demo04;
 
 /// <summary>
 /// Publishes quotes downstream in batches of 10. Whatever is still buffered must be flushed on shutdown,

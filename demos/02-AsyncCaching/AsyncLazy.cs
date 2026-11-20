@@ -1,4 +1,4 @@
-namespace BeyondAsyncAwait.Act02;
+namespace BeyondAsyncAwait.Demo02;
 
 /// <summary>
 /// One shared async value, loaded once on demand. Unlike a plain Lazy&lt;Task&lt;T&gt;&gt;:

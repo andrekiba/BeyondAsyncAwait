@@ -2,7 +2,7 @@ using System.Reactive.Subjects;
 using System.Threading.Channels;
 using BeyondAsyncAwait.Shared;
 
-namespace BeyondAsyncAwait.Act06;
+namespace BeyondAsyncAwait.Demo06;
 
 /// <summary>
 /// 6.3 — Push (Rx, no backpressure) meets pull (IAsyncEnumerable, a slow consumer).

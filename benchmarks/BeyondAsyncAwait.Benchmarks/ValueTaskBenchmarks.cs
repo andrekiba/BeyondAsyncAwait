@@ -4,7 +4,7 @@ using BenchmarkDotNet.Attributes;
 namespace BeyondAsyncAwait.Benchmarks;
 
 /// <summary>
-/// Act 3 — the cache-hit path (completes synchronously) and a path that really suspends.
+/// Demo 3 — the cache-hit path (completes synchronously) and a path that really suspends.
 /// Awaited: the hit is awaited directly inside an async method (with runtime async the Task may never exist).
 /// Materialized: the Task is handed back to the caller as an object.
 /// Suspend_*: the pooling builder reuses its boxes, but pooled methods opt out of runtime async.

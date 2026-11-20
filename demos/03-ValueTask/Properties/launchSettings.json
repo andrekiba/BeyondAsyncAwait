@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json.schemastore.org/launchsettings.json",
+  "profiles": {
+    "menu": {
+      "commandName": "Project"
+    },
+    "3.1 cache-hit (Release)": {
+      "commandName": "Project",
+      "commandLineArgs": "3.1"
+    },
+    "3.2 value-task-source": {
+      "commandName": "Project",
+      "commandLineArgs": "3.2"
+    }
+  }
+}

@@ -3,7 +3,7 @@ using BenchmarkDotNet.Attributes;
 namespace BeyondAsyncAwait.Benchmarks;
 
 /// <summary>
-/// Act 0 — a chain of <see cref="Depth"/> async methods, each awaiting the next.
+/// Demo 0 — a chain of <see cref="Depth"/> async methods, each awaiting the next.
 /// CompletesSynchronously: the leaf never suspends (the fast path, no continuation needed).
 /// Suspends: the leaf yields, so every level of the chain has to suspend and resume.
 /// </summary>

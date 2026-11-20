@@ -1,4 +1,4 @@
-using BeyondAsyncAwait.Act03;
+using BeyondAsyncAwait.Demo03;
 using BeyondAsyncAwait.Shared;
 
 // Allocation numbers are meaningful in Release:

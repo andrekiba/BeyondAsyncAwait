@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <RootNamespace>BeyondAsyncAwait.Act02</RootNamespace>
+    <RootNamespace>BeyondAsyncAwait.Demo02</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>

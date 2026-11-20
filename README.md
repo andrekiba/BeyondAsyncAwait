@@ -23,6 +23,12 @@ dotnet run --project demos/01-TaskCompletionSource -- rpc-correlation --fixed
 dotnet run --project demos/01-TaskCompletionSource -- all --no-pause        # smoke test
 ```
 
+Da **Visual Studio / Rider / VS Code**: apri `BeyondAsyncAwait.slnx`, scegli il progetto della Demo (`Demo01.TaskCompletionSource`…) come startup project e lo scenario dal menu dei profili accanto al tasto di avvio. Ogni progetto ha in `Properties/launchSettings.json` un profilo `menu` (il primo, senza argomenti) e uno per scenario (`1.2 rpc-correlation`…). Da terminale lo stesso profilo si sceglie con `--launch-profile`:
+
+```bash
+dotnet run --project demos/01-TaskCompletionSource --launch-profile "1.2 rpc-correlation"
+```
+
 Ogni riga di log riporta millisecondi trascorsi e thread id: nelle demo async il *quando* e il *dove* sono il punto.
 
 ### Runtime Async on/off

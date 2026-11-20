@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using System.Threading.Tasks.Sources;
 
-namespace BeyondAsyncAwait.Act03;
+namespace BeyondAsyncAwait.Demo03;
 
 /// <summary>Fixed prices, so a wrong result is obvious on screen.</summary>
 static class Prices

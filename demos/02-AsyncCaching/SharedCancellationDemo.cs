@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using BeyondAsyncAwait.Shared;
 
-namespace BeyondAsyncAwait.Act02;
+namespace BeyondAsyncAwait.Demo02;
 
 /// <summary>
 /// 2.3 — Trap 2 of a cached Task: the shared load uses the token of whoever triggered it.

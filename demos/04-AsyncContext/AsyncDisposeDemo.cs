@@ -1,7 +1,7 @@
 using BeyondAsyncAwait.Shared;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace BeyondAsyncAwait.Act04;
+namespace BeyondAsyncAwait.Demo04;
 
 /// <summary>
 /// 4.3 — Graceful shutdown of a batching publisher. Two ways to lose the last batch: dispose the DI scope

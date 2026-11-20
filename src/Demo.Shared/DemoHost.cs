@@ -1,7 +1,7 @@
 namespace BeyondAsyncAwait.Shared;
 
 /// <summary>
-/// Command line for every act:
+/// Command line for every Demo:
 /// <code>
 /// dotnet run                       interactive menu
 /// dotnet run -- list               list the demos

@@ -2,7 +2,7 @@ using System.Diagnostics;
 using System.Threading.Channels;
 using BeyondAsyncAwait.Shared;
 
-namespace BeyondAsyncAwait.Act05;
+namespace BeyondAsyncAwait.Demo05;
 
 /// <summary>
 /// 5.1 — A fast producer (market ticks, ~2000/s) feeds a slow consumer (persistence, ~200/s).

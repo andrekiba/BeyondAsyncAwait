@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using BeyondAsyncAwait.Shared;
 
-namespace BeyondAsyncAwait.Act01;
+namespace BeyondAsyncAwait.Demo01;
 
 /// <summary>
 /// 1.2 — Request/response over a message bus: a TaskCompletionSource per request, correlated by id.

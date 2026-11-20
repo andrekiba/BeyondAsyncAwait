@@ -1,6 +1,6 @@
 using BeyondAsyncAwait.Shared;
 
-namespace BeyondAsyncAwait.Act01;
+namespace BeyondAsyncAwait.Demo01;
 
 /// <summary>
 /// 1.1 — SetResult runs the awaiter's continuation inline, on the thread that completes the TCS.

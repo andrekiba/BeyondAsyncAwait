@@ -2,7 +2,7 @@ using System.Diagnostics;
 using System.Reflection;
 using BeyondAsyncAwait.Shared;
 
-namespace BeyondAsyncAwait.Act03;
+namespace BeyondAsyncAwait.Demo03;
 
 /// <summary>
 /// 3.1 — The cache-hit path completes synchronously, but with compiler state machines an async Task&lt;decimal&gt;

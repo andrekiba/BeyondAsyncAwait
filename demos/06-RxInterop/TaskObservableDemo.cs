@@ -2,7 +2,7 @@ using System.Reactive.Linq;
 using System.Reactive.Threading.Tasks;
 using BeyondAsyncAwait.Shared;
 
-namespace BeyondAsyncAwait.Act06;
+namespace BeyondAsyncAwait.Demo06;
 
 /// <summary>
 /// 6.1 — Task and IObservable convert into each other, but the semantics don't line up.

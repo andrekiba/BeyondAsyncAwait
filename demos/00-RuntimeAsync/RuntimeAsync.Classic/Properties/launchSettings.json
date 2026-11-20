@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json.schemastore.org/launchsettings.json",
+  "profiles": {
+    "menu": {
+      "commandName": "Project"
+    },
+    "0.1 il": {
+      "commandName": "Project",
+      "commandLineArgs": "0.1"
+    },
+    "0.2 stack": {
+      "commandName": "Project",
+      "commandLineArgs": "0.2"
+    },
+    "0.3 elision": {
+      "commandName": "Project",
+      "commandLineArgs": "0.3"
+    }
+  }
+}

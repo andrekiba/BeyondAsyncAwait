@@ -1,0 +1,3 @@
+# The repo is worked on from Windows and macOS: line endings are normalized to LF in the
+# repository whatever each machine's core.autocrlf says, and checked out natively.
+* text=auto

@@ -1,4 +1,4 @@
-namespace BeyondAsyncAwait.Act02;
+namespace BeyondAsyncAwait.Demo02;
 
 static class Concurrently
 {

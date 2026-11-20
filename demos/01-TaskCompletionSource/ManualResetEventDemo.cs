@@ -1,6 +1,6 @@
 using BeyondAsyncAwait.Shared;
 
-namespace BeyondAsyncAwait.Act01;
+namespace BeyondAsyncAwait.Demo01;
 
 /// <summary>
 /// 1.3 — An async manual-reset event (pause/resume for a pipeline) built on TaskCompletionSource.

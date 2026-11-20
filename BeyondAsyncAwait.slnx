@@ -15,22 +15,22 @@
     <Project Path="demos/00-RuntimeAsync/RuntimeAsync.Native/RuntimeAsync.Native.csproj" />
   </Folder>
   <Folder Name="/01-TaskCompletionSource/">
-    <Project Path="demos/01-TaskCompletionSource/Act01.TaskCompletionSource.csproj" />
+    <Project Path="demos/01-TaskCompletionSource/Demo01.TaskCompletionSource.csproj" />
   </Folder>
   <Folder Name="/02-AsyncCaching/">
-    <Project Path="demos/02-AsyncCaching/Act02.AsyncCaching.csproj" />
+    <Project Path="demos/02-AsyncCaching/Demo02.AsyncCaching.csproj" />
   </Folder>
   <Folder Name="/03-ValueTask/">
-    <Project Path="demos/03-ValueTask/Act03.ValueTask.csproj" />
+    <Project Path="demos/03-ValueTask/Demo03.ValueTask.csproj" />
   </Folder>
   <Folder Name="/04-AsyncContext/">
-    <Project Path="demos/04-AsyncContext/Act04.AsyncContext.csproj" />
+    <Project Path="demos/04-AsyncContext/Demo04.AsyncContext.csproj" />
   </Folder>
   <Folder Name="/05-Channels/">
-    <Project Path="demos/05-Channels/Act05.Channels.csproj" />
+    <Project Path="demos/05-Channels/Demo05.Channels.csproj" />
   </Folder>
   <Folder Name="/06-RxInterop/">
-    <Project Path="demos/06-RxInterop/Act06.RxInterop.csproj" />
+    <Project Path="demos/06-RxInterop/Demo06.RxInterop.csproj" />
   </Folder>
   <Folder Name="/benchmarks/">
     <Project Path="benchmarks/BeyondAsyncAwait.Benchmarks/BeyondAsyncAwait.Benchmarks.csproj" />

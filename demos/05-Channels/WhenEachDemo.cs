@@ -1,7 +1,7 @@
 using System.Threading.Channels;
 using BeyondAsyncAwait.Shared;
 
-namespace BeyondAsyncAwait.Act05;
+namespace BeyondAsyncAwait.Demo05;
 
 /// <summary>
 /// 5.3 — Two .NET 9 tools for "many results, in the right order".

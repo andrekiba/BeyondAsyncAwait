@@ -1,6 +1,6 @@
 using BeyondAsyncAwait.Shared;
 
-namespace BeyondAsyncAwait.Act03;
+namespace BeyondAsyncAwait.Demo03;
 
 /// <summary>
 /// 3.2 — A pooled IValueTaskSource (the Socket pattern) makes an async operation that really suspends

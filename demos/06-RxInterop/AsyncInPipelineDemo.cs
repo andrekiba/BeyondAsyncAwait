@@ -2,7 +2,7 @@ using System.Collections.Concurrent;
 using System.Reactive.Linq;
 using BeyondAsyncAwait.Shared;
 
-namespace BeyondAsyncAwait.Act06;
+namespace BeyondAsyncAwait.Demo06;
 
 /// <summary>
 /// 6.2 — One async provider call per event. Subscribe(async ...) is async void: overlapping work,
