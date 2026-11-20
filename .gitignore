@@ -354,5 +354,5 @@ MigrationBackup/
 # OSX
 .DS_Store
 
-# Idea
-.Idea
+# JetBrains Rider (run configurations and local workspace)
+.idea/
