@@ -44,21 +44,21 @@ sealed class ElisionDemo : Demo
 
     sealed class QuoteSession : IDisposable
     {
-        readonly FakeQuoteProvider _provider = new() { Latency = TimeSpan.FromMilliseconds(100) };
-        bool _disposed;
+        readonly FakeQuoteProvider provider = new() { Latency = TimeSpan.FromMilliseconds(100) };
+        bool disposed;
 
         public async Task<Quote> GetQuoteAsync(string symbol)
         {
             Out.Log("session: request sent");
-            var quote = await _provider.GetQuoteAsync(symbol);
+            var quote = await provider.GetQuoteAsync(symbol);
             Out.Log("session: response received");
-            ObjectDisposedException.ThrowIf(_disposed, this);
+            ObjectDisposedException.ThrowIf(disposed, this);
             return quote;
         }
 
         public void Dispose()
         {
-            _disposed = true;
+            disposed = true;
             Out.Log("session: disposed");
         }
     }

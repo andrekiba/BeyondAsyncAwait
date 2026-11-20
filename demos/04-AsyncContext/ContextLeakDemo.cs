@@ -47,31 +47,31 @@ sealed class ContextLeakDemo : Demo
     /// <summary>Singleton: one refresh loop for the whole application.</summary>
     sealed class PriceRefresher(bool suppressFlow)
     {
-        readonly CancellationTokenSource _stop = new();
-        readonly Lock _gate = new();
-        Task? _loop;
-        int _lines, _taggedLines;
+        readonly CancellationTokenSource stop = new();
+        readonly Lock gate = new();
+        Task? loop;
+        int lines, taggedLines;
 
-        public int Lines => Volatile.Read(ref _lines);
-        public int TaggedLines => Volatile.Read(ref _taggedLines);
+        public int Lines => Volatile.Read(ref lines);
+        public int TaggedLines => Volatile.Read(ref taggedLines);
 
         public void EnsureStarted(CancellationToken shutdown)
         {
-            lock (_gate)
+            lock (gate)
             {
-                if (_loop is not null)
+                if (loop is not null)
                     return;
 
                 if (suppressFlow)
                 {
                     // Nothing of the current request flows into work that outlives it.
                     using (ExecutionContext.SuppressFlow())
-                        _loop = Task.Run(LoopAsync);
+                        loop = Task.Run(LoopAsync);
                     shutdown.UnsafeRegister(_ => Background("flushing subscriptions on shutdown"), null);
                 }
                 else
                 {
-                    _loop = Task.Run(LoopAsync);
+                    loop = Task.Run(LoopAsync);
                     shutdown.Register(() => Background("flushing subscriptions on shutdown"));
                 }
             }
@@ -79,17 +79,17 @@ sealed class ContextLeakDemo : Demo
 
         public async Task StopAsync()
         {
-            await _stop.CancelAsync();
-            if (_loop is not null)
-                await _loop.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            await stop.CancelAsync();
+            if (loop is not null)
+                await loop.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
         }
 
         async Task LoopAsync()
         {
-            while (!_stop.IsCancellationRequested)
+            while (!stop.IsCancellationRequested)
             {
-                await Task.Delay(150, _stop.Token).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
-                if (!_stop.IsCancellationRequested)
+                await Task.Delay(150, stop.Token).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+                if (!stop.IsCancellationRequested)
                     Background("refreshing price cache");
             }
         }
@@ -97,10 +97,10 @@ sealed class ContextLeakDemo : Demo
         void Background(string what)
         {
             var tenant = Tenant.Value;
-            Interlocked.Increment(ref _lines);
+            Interlocked.Increment(ref lines);
             if (tenant is not null)
             {
-                Interlocked.Increment(ref _taggedLines);
+                Interlocked.Increment(ref taggedLines);
                 Out.Bad($"[tenant={tenant}] background: {what}");
             }
             else

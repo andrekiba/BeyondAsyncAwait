@@ -82,22 +82,22 @@ interface IRpcClient
 /// <summary>Broken: the usual first version.</summary>
 sealed class NaiveRpcClient : IRpcClient
 {
-    readonly ConcurrentDictionary<Guid, TaskCompletionSource<RpcReply>> _pending = new();
-    readonly FakeBus _bus;
+    readonly ConcurrentDictionary<Guid, TaskCompletionSource<RpcReply>> pending = new();
+    readonly FakeBus bus;
 
     public NaiveRpcClient(FakeBus bus)
     {
-        _bus = bus;
+        this.bus = bus;
         bus.Subscribe(OnReply);
     }
 
-    public int PendingCount => _pending.Count;
+    public int PendingCount => pending.Count;
 
     public Task<RpcReply> RequestAsync(string symbol, TimeSpan timeout, CancellationToken cancellationToken)
     {
         var id = Guid.NewGuid();
         var tcs = new TaskCompletionSource<RpcReply>();
-        _pending[id] = tcs;
+        pending[id] = tcs;
 
         // Never disposed: stays registered on the connection token, keeping tcs alive.
         cancellationToken.Register(() => tcs.SetCanceled());
@@ -110,14 +110,14 @@ sealed class NaiveRpcClient : IRpcClient
                 tcs.SetCanceled();
         });
 
-        _bus.Publish(id, symbol);
+        bus.Publish(id, symbol);
         return tcs.Task;
     }
 
     void OnReply(RpcReply reply)
     {
         // Never removed; throws if the timeout already completed the task.
-        if (_pending.TryGetValue(reply.Id, out var tcs))
+        if (pending.TryGetValue(reply.Id, out var tcs))
             tcs.SetResult(reply);
     }
 }
@@ -125,22 +125,22 @@ sealed class NaiveRpcClient : IRpcClient
 /// <summary>Fixed.</summary>
 sealed class RpcClient : IRpcClient
 {
-    readonly ConcurrentDictionary<Guid, TaskCompletionSource<RpcReply>> _pending = new();
-    readonly FakeBus _bus;
+    readonly ConcurrentDictionary<Guid, TaskCompletionSource<RpcReply>> pending = new();
+    readonly FakeBus bus;
 
     public RpcClient(FakeBus bus)
     {
-        _bus = bus;
+        this.bus = bus;
         bus.Subscribe(OnReply);
     }
 
-    public int PendingCount => _pending.Count;
+    public int PendingCount => pending.Count;
 
     public async Task<RpcReply> RequestAsync(string symbol, TimeSpan timeout, CancellationToken cancellationToken)
     {
         var id = Guid.NewGuid();
         var tcs = new TaskCompletionSource<RpcReply>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _pending[id] = tcs;
+        pending[id] = tcs;
 
         try
         {
@@ -149,20 +149,20 @@ sealed class RpcClient : IRpcClient
             using var registration = timeoutCts.Token.Register(
                 static state => ((TaskCompletionSource<RpcReply>)state!).TrySetCanceled(), tcs);
 
-            _bus.Publish(id, symbol);
+            bus.Publish(id, symbol);
             return await tcs.Task;
             // Shorter alternative for the timeout part: await tcs.Task.WaitAsync(timeout, cancellationToken)
         }
         finally
         {
-            _pending.TryRemove(id, out _);
+            pending.TryRemove(id, out _);
         }
     }
 
     void OnReply(RpcReply reply)
     {
         // A late reply finds nothing: it's ignored, not thrown.
-        if (_pending.TryRemove(reply.Id, out var tcs))
+        if (pending.TryRemove(reply.Id, out var tcs))
             tcs.TrySetResult(reply);
     }
 }
@@ -173,17 +173,17 @@ sealed class RpcClient : IRpcClient
 /// </summary>
 sealed class FakeBus
 {
-    Action<RpcReply>? _handler;
-    int _published, _lateReplies, _handlerExceptions;
+    Action<RpcReply>? handler;
+    int published, lateReplies, handlerExceptions;
 
-    public int LateReplies => Volatile.Read(ref _lateReplies);
-    public int HandlerExceptions => Volatile.Read(ref _handlerExceptions);
+    public int LateReplies => Volatile.Read(ref lateReplies);
+    public int HandlerExceptions => Volatile.Read(ref handlerExceptions);
 
-    public void Subscribe(Action<RpcReply>? handler) => _handler = handler;
+    public void Subscribe(Action<RpcReply>? handler) => this.handler = handler;
 
     public void Publish(Guid id, string symbol)
     {
-        var index = Interlocked.Increment(ref _published);
+        var index = Interlocked.Increment(ref published);
         var slot = index % 10;
         if (slot == 0)
             return;
@@ -197,15 +197,15 @@ sealed class FakeBus
     {
         await Task.Delay(latency);
         if (late)
-            Interlocked.Increment(ref _lateReplies);
+            Interlocked.Increment(ref lateReplies);
 
         try
         {
-            _handler?.Invoke(reply);
+            handler?.Invoke(reply);
         }
         catch (Exception ex)
         {
-            if (Interlocked.Increment(ref _handlerExceptions) == 1)
+            if (Interlocked.Increment(ref handlerExceptions) == 1)
                 Out.Bad($"bus: reply handler threw {ex.GetType().Name}: {ex.Message}");
         }
     }

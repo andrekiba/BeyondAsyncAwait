@@ -246,28 +246,28 @@ sealed class PipelineDemo : Demo
 
     sealed class PipelineContext
     {
-        readonly CancellationTokenSource _cts = new();
-        int _produced;
-        Exception? _firstError;
+        readonly CancellationTokenSource cts = new();
+        int produced;
+        Exception? firstError;
 
-        public CancellationToken Token => _cts.Token;
-        public int Produced => Volatile.Read(ref _produced);
+        public CancellationToken Token => cts.Token;
+        public int Produced => Volatile.Read(ref produced);
         public ConcurrentDictionary<int, PricedTrade> Database { get; } = new();
         public ConcurrentQueue<int> DeadLetters { get; } = new();
-        public Exception? FirstError => Volatile.Read(ref _firstError);
+        public Exception? FirstError => Volatile.Read(ref firstError);
         public string? FailedStage { get; private set; }
 
-        public void OnProduced() => Interlocked.Increment(ref _produced);
+        public void OnProduced() => Interlocked.Increment(ref produced);
 
         public void Fail(string stage, Exception error)
         {
             if (error is OperationCanceledException)
                 return;
 
-            if (Interlocked.CompareExchange(ref _firstError, error, null) is null)
+            if (Interlocked.CompareExchange(ref firstError, error, null) is null)
             {
                 FailedStage = stage;
-                _cts.Cancel();
+                cts.Cancel();
             }
         }
     }

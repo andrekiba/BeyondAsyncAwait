@@ -8,23 +8,23 @@ namespace BeyondAsyncAwait.Demo03;
 /// </summary>
 sealed class QuoteCache(FakeQuoteProvider provider)
 {
-    readonly Dictionary<string, decimal> _prices = [];
+    readonly Dictionary<string, decimal> prices = [];
 
     public async Task<decimal> GetPriceAsTaskAsync(string symbol)
     {
-        if (_prices.TryGetValue(symbol, out var price))
+        if (prices.TryGetValue(symbol, out var price))
             return price;
 
         var quote = await provider.GetQuoteAsync(symbol);
-        return _prices[symbol] = quote.Price;
+        return prices[symbol] = quote.Price;
     }
 
     public async ValueTask<decimal> GetPriceAsValueTaskAsync(string symbol)
     {
-        if (_prices.TryGetValue(symbol, out var price))
+        if (prices.TryGetValue(symbol, out var price))
             return price;
 
         var quote = await provider.GetQuoteAsync(symbol);
-        return _prices[symbol] = quote.Price;
+        return prices[symbol] = quote.Price;
     }
 }

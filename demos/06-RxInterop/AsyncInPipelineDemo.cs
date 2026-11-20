@@ -111,37 +111,37 @@ sealed class AsyncInPipelineDemo : Demo
 
     sealed class Probe
     {
-        readonly FakeQuoteProvider _provider = new() { Latency = TimeSpan.FromMilliseconds(100) };
-        readonly ConcurrentQueue<int> _completed = new();
-        int _inFlight, _maxInFlight, _cancelled;
-        long _lastCompletedAt;
+        readonly FakeQuoteProvider provider = new() { Latency = TimeSpan.FromMilliseconds(100) };
+        readonly ConcurrentQueue<int> completed = new();
+        int inFlight, maxInFlight, cancelled;
+        long lastCompletedAt;
 
-        public int MaxInFlight => Volatile.Read(ref _maxInFlight);
-        public int Cancelled => Volatile.Read(ref _cancelled);
-        public int Completed => _completed.Count;
-        public long LastCompletedAt => Interlocked.Read(ref _lastCompletedAt);
-        public string Order => string.Join(" ", _completed.Select(seq => $"#{seq}"));
+        public int MaxInFlight => Volatile.Read(ref maxInFlight);
+        public int Cancelled => Volatile.Read(ref cancelled);
+        public int Completed => completed.Count;
+        public long LastCompletedAt => Interlocked.Read(ref lastCompletedAt);
+        public string Order => string.Join(" ", completed.Select(seq => $"#{seq}"));
 
         public async Task<Quote> PriceAsync(int seq, CancellationToken cancellationToken = default)
         {
-            InterlockedEx.Max(ref _maxInFlight, Interlocked.Increment(ref _inFlight));
+            InterlockedEx.Max(ref maxInFlight, Interlocked.Increment(ref inFlight));
             try
             {
                 await Task.Delay(Jitter[seq], cancellationToken);
-                var quote = await _provider.GetQuoteAsync(Symbols[seq], cancellationToken);
-                _completed.Enqueue(seq);
-                Interlocked.Exchange(ref _lastCompletedAt, Out.ElapsedMs);
+                var quote = await provider.GetQuoteAsync(Symbols[seq], cancellationToken);
+                completed.Enqueue(seq);
+                Interlocked.Exchange(ref lastCompletedAt, Out.ElapsedMs);
                 return quote;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                Interlocked.Increment(ref _cancelled);
+                Interlocked.Increment(ref cancelled);
                 Out.Log($"⊘ #{seq} {Symbols[seq]} cancelled");
                 throw;
             }
             finally
             {
-                Interlocked.Decrement(ref _inFlight);
+                Interlocked.Decrement(ref inFlight);
             }
         }
     }

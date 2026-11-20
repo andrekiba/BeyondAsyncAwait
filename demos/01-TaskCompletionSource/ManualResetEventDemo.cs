@@ -54,32 +54,32 @@ interface IAsyncEvent
 /// <summary>Broken: Reset always swaps the TCS, even when nobody has set it yet.</summary>
 sealed class NaiveAsyncManualResetEvent : IAsyncEvent
 {
-    TaskCompletionSource _tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    TaskCompletionSource tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    public Task WaitAsync() => _tcs.Task;
-    public void Set() => _tcs.TrySetResult();
-    public void Reset() => _tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    public Task WaitAsync() => tcs.Task;
+    public void Set() => tcs.TrySetResult();
+    public void Reset() => tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 }
 
 /// <summary>Fixed: swap only a completed TCS, and only if nobody swapped it in the meantime.</summary>
 sealed class AsyncManualResetEvent : IAsyncEvent
 {
-    TaskCompletionSource _tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    TaskCompletionSource tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    public Task WaitAsync() => Volatile.Read(ref _tcs).Task;
+    public Task WaitAsync() => Volatile.Read(ref tcs).Task;
 
-    public void Set() => Volatile.Read(ref _tcs).TrySetResult();
+    public void Set() => Volatile.Read(ref tcs).TrySetResult();
 
     public void Reset()
     {
         while (true)
         {
-            var current = Volatile.Read(ref _tcs);
+            var current = Volatile.Read(ref tcs);
             if (!current.Task.IsCompleted)
                 return;
 
             var next = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            if (Interlocked.CompareExchange(ref _tcs, next, current) == current)
+            if (Interlocked.CompareExchange(ref tcs, next, current) == current)
                 return;
         }
     }

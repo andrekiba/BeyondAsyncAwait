@@ -152,21 +152,21 @@ sealed class BackpressureDemo : Demo
 
     sealed class Stats
     {
-        int _produced, _persisted, _dropped;
-        long _stalenessMs;
+        int produced, persisted, dropped;
+        long stalenessMs;
 
-        public int Produced => Volatile.Read(ref _produced);
-        public int Persisted => Volatile.Read(ref _persisted);
-        public int Dropped => Volatile.Read(ref _dropped);
-        public long StalenessMs => Volatile.Read(ref _stalenessMs);
+        public int Produced => Volatile.Read(ref produced);
+        public int Persisted => Volatile.Read(ref persisted);
+        public int Dropped => Volatile.Read(ref dropped);
+        public long StalenessMs => Volatile.Read(ref stalenessMs);
 
-        public void OnProduced() => Interlocked.Increment(ref _produced);
-        public void OnDropped() => Interlocked.Increment(ref _dropped);
+        public void OnProduced() => Interlocked.Increment(ref produced);
+        public void OnDropped() => Interlocked.Increment(ref dropped);
 
         public void OnPersisted(Tick tick)
         {
-            Interlocked.Increment(ref _persisted);
-            Volatile.Write(ref _stalenessMs, (long)Stopwatch.GetElapsedTime(tick.Timestamp).TotalMilliseconds);
+            Interlocked.Increment(ref persisted);
+            Volatile.Write(ref stalenessMs, (long)Stopwatch.GetElapsedTime(tick.Timestamp).TotalMilliseconds);
         }
     }
 }

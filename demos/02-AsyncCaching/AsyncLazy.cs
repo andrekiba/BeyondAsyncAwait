@@ -8,17 +8,17 @@ namespace BeyondAsyncAwait.Demo02;
 /// </summary>
 public sealed class AsyncLazy<T>
 {
-    readonly Func<Task<T>> _factory;
-    Lazy<Task<T>> _instance;
+    readonly Func<Task<T>> factory;
+    Lazy<Task<T>> current;
 
     public AsyncLazy(Func<Task<T>> factory)
     {
-        _factory = factory;
-        _instance = CreateInstance();
+        this.factory = factory;
+        current = CreateInstance();
     }
 
     public Task<T> GetValueAsync(CancellationToken cancellationToken = default) =>
-        Volatile.Read(ref _instance).Value.WaitAsync(cancellationToken);
+        Volatile.Read(ref current).Value.WaitAsync(cancellationToken);
 
     Lazy<Task<T>> CreateInstance()
     {
@@ -38,12 +38,12 @@ public sealed class AsyncLazy<T>
     {
         try
         {
-            return await _factory();
+            return await factory();
         }
         catch
         {
             // Don't cache the failure: swap in a fresh Lazy, unless someone already did.
-            Interlocked.CompareExchange(ref _instance, CreateInstance(), instance);
+            Interlocked.CompareExchange(ref current, CreateInstance(), instance);
             throw;
         }
     }

@@ -12,7 +12,7 @@ namespace BeyondAsyncAwait.Benchmarks;
 public class ValueTaskBenchmarks
 {
     const int Hits = 100;
-    readonly Dictionary<string, decimal> _prices = new() { ["MSFT"] = 412.10m };
+    readonly Dictionary<string, decimal> prices = new() { ["MSFT"] = 412.10m };
 
     [Benchmark(OperationsPerInvoke = Hits)]
     public async Task<decimal> Hit_Task_Awaited()
@@ -34,21 +34,21 @@ public class ValueTaskBenchmarks
 
     // Kept in a field: the Task has to exist as an object. (Just returning it isn't enough: the
     // BenchmarkDotNet harness is compiled with runtime async too and awaits it directly.)
-    Task<decimal>? _lastTask;
-    ValueTask<decimal> _lastValueTask;
+    Task<decimal>? lastTask;
+    ValueTask<decimal> lastValueTask;
 
     [Benchmark]
     public decimal Hit_Task_Materialized()
     {
-        _lastTask = GetTaskAsync("MSFT");
-        return _lastTask.Result;
+        lastTask = GetTaskAsync("MSFT");
+        return lastTask.Result;
     }
 
     [Benchmark]
     public decimal Hit_ValueTask_Materialized()
     {
-        _lastValueTask = GetValueTaskAsync("MSFT");
-        return _lastValueTask.Result;
+        lastValueTask = GetValueTaskAsync("MSFT");
+        return lastValueTask.Result;
     }
 
     [Benchmark]
@@ -59,7 +59,7 @@ public class ValueTaskBenchmarks
 
     async Task<decimal> GetTaskAsync(string symbol)
     {
-        if (_prices.TryGetValue(symbol, out var price))
+        if (prices.TryGetValue(symbol, out var price))
             return price;
 
         await Task.Yield();
@@ -68,7 +68,7 @@ public class ValueTaskBenchmarks
 
     async ValueTask<decimal> GetValueTaskAsync(string symbol)
     {
-        if (_prices.TryGetValue(symbol, out var price))
+        if (prices.TryGetValue(symbol, out var price))
             return price;
 
         await Task.Yield();

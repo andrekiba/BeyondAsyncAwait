@@ -20,59 +20,59 @@ static class Prices
 /// </summary>
 sealed class PooledQuoteFeed
 {
-    readonly ConcurrentQueue<QuoteOperation> _pool = new();
-    int _created;
+    readonly ConcurrentQueue<QuoteOperation> pool = new();
+    int created;
 
-    public int OperationsCreated => Volatile.Read(ref _created);
+    public int OperationsCreated => Volatile.Read(ref created);
 
     public ValueTask<decimal> ReceiveAsync(string symbol)
     {
-        if (!_pool.TryDequeue(out var operation))
+        if (!pool.TryDequeue(out var operation))
         {
             operation = new QuoteOperation(this);
-            Interlocked.Increment(ref _created);
+            Interlocked.Increment(ref created);
         }
 
         return operation.Start(symbol);
     }
 
-    void Return(QuoteOperation operation) => _pool.Enqueue(operation);
+    void Return(QuoteOperation operation) => pool.Enqueue(operation);
 
     sealed class QuoteOperation(PooledQuoteFeed owner) : IValueTaskSource<decimal>, IThreadPoolWorkItem
     {
         // Mutable struct: never make this field readonly.
-        ManualResetValueTaskSourceCore<decimal> _core;
-        string _symbol = "";
+        ManualResetValueTaskSourceCore<decimal> core;
+        string symbol = "";
 
         public ValueTask<decimal> Start(string symbol)
         {
-            _symbol = symbol;
+            this.symbol = symbol;
             ThreadPool.UnsafeQueueUserWorkItem(this, preferLocal: false);
             // The token is the version: it changes on every Reset, so a stale ValueTask is detected.
-            return new ValueTask<decimal>(this, _core.Version);
+            return new ValueTask<decimal>(this, core.Version);
         }
 
         // The "network" answers on a thread-pool thread.
-        void IThreadPoolWorkItem.Execute() => _core.SetResult(Prices.Of(_symbol));
+        void IThreadPoolWorkItem.Execute() => core.SetResult(Prices.Of(symbol));
 
         public decimal GetResult(short token)
         {
             try
             {
-                return _core.GetResult(token);
+                return core.GetResult(token);
             }
             finally
             {
                 // Consumed: reset (version++) and back to the pool, ready for the next ReceiveAsync.
-                _core.Reset();
+                core.Reset();
                 owner.Return(this);
             }
         }
 
-        public ValueTaskSourceStatus GetStatus(short token) => _core.GetStatus(token);
+        public ValueTaskSourceStatus GetStatus(short token) => core.GetStatus(token);
 
         public void OnCompleted(Action<object?> continuation, object? state, short token, ValueTaskSourceOnCompletedFlags flags) =>
-            _core.OnCompleted(continuation, state, token, flags);
+            core.OnCompleted(continuation, state, token, flags);
     }
 }
 
@@ -82,33 +82,33 @@ sealed class PooledQuoteFeed
 /// </summary>
 sealed class NaivePooledQuoteFeed
 {
-    readonly ConcurrentQueue<NaiveOperation> _pool = new();
+    readonly ConcurrentQueue<NaiveOperation> pool = new();
 
     public ValueTask<decimal> ReceiveAsync(string symbol)
     {
-        if (!_pool.TryDequeue(out var operation))
+        if (!pool.TryDequeue(out var operation))
             operation = new NaiveOperation(this);
 
         return operation.Start(symbol);
     }
 
-    void Return(NaiveOperation operation) => _pool.Enqueue(operation);
+    void Return(NaiveOperation operation) => pool.Enqueue(operation);
 
     sealed class NaiveOperation(NaivePooledQuoteFeed owner) : IValueTaskSource<decimal>, IThreadPoolWorkItem
     {
-        readonly Lock _gate = new();
-        string _symbol = "";
-        decimal _result;
-        bool _completed;
-        Action<object?>? _continuation;
-        object? _state;
+        readonly Lock gate = new();
+        string symbol = "";
+        decimal price;
+        bool completed;
+        Action<object?>? pendingContinuation;
+        object? pendingState;
 
         public ValueTask<decimal> Start(string symbol)
         {
-            lock (_gate)
+            lock (gate)
             {
-                _symbol = symbol;
-                _completed = false;
+                this.symbol = symbol;
+                completed = false;
             }
 
             ThreadPool.UnsafeQueueUserWorkItem(this, preferLocal: false);
@@ -119,12 +119,12 @@ sealed class NaivePooledQuoteFeed
         {
             Action<object?>? continuation;
             object? state;
-            lock (_gate)
+            lock (gate)
             {
-                _result = Prices.Of(_symbol);
-                _completed = true;
-                (continuation, state) = (_continuation, _state);
-                _continuation = null;
+                price = Prices.Of(symbol);
+                completed = true;
+                (continuation, state) = (pendingContinuation, pendingState);
+                pendingContinuation = null;
             }
 
             continuation?.Invoke(state);
@@ -132,21 +132,21 @@ sealed class NaivePooledQuoteFeed
 
         public decimal GetResult(short token)
         {
-            var result = _result;
+            var result = price;
             owner.Return(this);
             return result;
         }
 
         public ValueTaskSourceStatus GetStatus(short token) =>
-            Volatile.Read(ref _completed) ? ValueTaskSourceStatus.Succeeded : ValueTaskSourceStatus.Pending;
+            Volatile.Read(ref completed) ? ValueTaskSourceStatus.Succeeded : ValueTaskSourceStatus.Pending;
 
         public void OnCompleted(Action<object?> continuation, object? state, short token, ValueTaskSourceOnCompletedFlags flags)
         {
-            lock (_gate)
+            lock (gate)
             {
-                if (!_completed)
+                if (!completed)
                 {
-                    (_continuation, _state) = (continuation, state);
+                    (pendingContinuation, pendingState) = (continuation, state);
                     return;
                 }
             }

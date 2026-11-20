@@ -11,46 +11,46 @@ sealed class BatchingPublisher : IAsyncDisposable
 {
     const int BatchSize = 10;
 
-    readonly Channel<Quote> _input = Channel.CreateUnbounded<Quote>(new UnboundedChannelOptions { SingleReader = true });
-    readonly bool _waitForFlush;
-    readonly Task _loop;
-    int _published, _disposed;
+    readonly Channel<Quote> input = Channel.CreateUnbounded<Quote>(new UnboundedChannelOptions { SingleReader = true });
+    readonly bool waitForFlush;
+    readonly Task loop;
+    int published, disposed;
 
     /// <param name="waitForFlush">False reproduces the bug: DisposeAsync returns before the last flush.</param>
     public BatchingPublisher(bool waitForFlush)
     {
-        _waitForFlush = waitForFlush;
-        _loop = LoopAsync();
+        this.waitForFlush = waitForFlush;
+        loop = LoopAsync();
     }
 
-    public int Published => Volatile.Read(ref _published);
+    public int Published => Volatile.Read(ref published);
 
-    public ValueTask PublishAsync(Quote quote) => _input.Writer.WriteAsync(quote);
+    public ValueTask PublishAsync(Quote quote) => input.Writer.WriteAsync(quote);
 
     public async ValueTask DisposeAsync()
     {
         // Idempotent: DI containers, using blocks and shutdown hooks may all call it.
-        if (Interlocked.Exchange(ref _disposed, 1) == 1)
+        if (Interlocked.Exchange(ref disposed, 1) == 1)
         {
             Out.Log("publisher: already disposed, nothing to do");
             return;
         }
 
-        _input.Writer.TryComplete();
-        if (!_waitForFlush)
+        input.Writer.TryComplete();
+        if (!waitForFlush)
             return;
 
         // Wait for the last flush; a failed flush is logged, it must not throw out of DisposeAsync.
-        await _loop.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
-        if (_loop.IsFaulted)
-            Out.Bad($"publisher: last flush failed: {_loop.Exception!.InnerException!.Message}");
+        await loop.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        if (loop.IsFaulted)
+            Out.Bad($"publisher: last flush failed: {loop.Exception!.InnerException!.Message}");
         Out.Log("publisher: disposed, buffer flushed");
     }
 
     async Task LoopAsync()
     {
         var batch = new List<Quote>(BatchSize);
-        await foreach (var quote in _input.Reader.ReadAllAsync())
+        await foreach (var quote in input.Reader.ReadAllAsync())
         {
             batch.Add(quote);
             if (batch.Count == BatchSize)
@@ -65,7 +65,7 @@ sealed class BatchingPublisher : IAsyncDisposable
     async Task FlushAsync(List<Quote> batch)
     {
         await Task.Delay(50); // the downstream write
-        Interlocked.Add(ref _published, batch.Count);
+        Interlocked.Add(ref published, batch.Count);
         Out.Log($"publisher: flushed a batch of {batch.Count}");
         batch.Clear();
     }

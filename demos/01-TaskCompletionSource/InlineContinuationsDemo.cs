@@ -65,20 +65,20 @@ sealed record Frame(int Id);
 /// <summary>A connection with pending requests completed by a dedicated read loop thread.</summary>
 sealed class FakeConnection(TaskCreationOptions completionOptions)
 {
-    readonly Lock _gate = new();
-    readonly Dictionary<int, TaskCompletionSource<Frame>> _pending = [];
-    readonly TaskCompletionSource _readLoopCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    readonly Lock gate = new();
+    readonly Dictionary<int, TaskCompletionSource<Frame>> pending = [];
+    readonly TaskCompletionSource readLoopCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public int ReadLoopThreadId { get; private set; }
     public long MaxFrameDelayMs { get; private set; }
-    public bool IsLockHeldByCurrentThread => _gate.IsHeldByCurrentThread;
-    public Task ReadLoopCompletion => _readLoopCompletion.Task;
+    public bool IsLockHeldByCurrentThread => gate.IsHeldByCurrentThread;
+    public Task ReadLoopCompletion => readLoopCompletion.Task;
 
     public Task<Frame> SendAsync(int id)
     {
         var tcs = new TaskCompletionSource<Frame>(completionOptions);
-        lock (_gate)
-            _pending.Add(id, tcs);
+        lock (gate)
+            pending.Add(id, tcs);
         return tcs.Task;
     }
 
@@ -106,13 +106,13 @@ sealed class FakeConnection(TaskCreationOptions completionOptions)
             Out.Log($"read loop: frame {id} dispatched, {delay} ms after it arrived");
 
             // Completing inside the lock is common: with inline continuations, the handler runs in here too.
-            lock (_gate)
+            lock (gate)
             {
-                _pending.Remove(id, out var tcs);
+                pending.Remove(id, out var tcs);
                 tcs!.SetResult(new Frame(id));
             }
         }
 
-        _readLoopCompletion.SetResult();
+        readLoopCompletion.SetResult();
     }
 }
