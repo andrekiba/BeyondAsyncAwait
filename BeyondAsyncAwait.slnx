@@ -12,6 +12,7 @@
     <Project Path="src/Demo.Shared/Demo.Shared.csproj" />
   </Folder>
   <Folder Name="/00-RuntimeAsync/">
+    <File Path="demos/00-RuntimeAsync/README.md" />
     <Project Path="demos/00-RuntimeAsync/RuntimeAsync.Classic/RuntimeAsync.Classic.csproj" />
     <Project Path="demos/00-RuntimeAsync/RuntimeAsync.Native/RuntimeAsync.Native.csproj" />
   </Folder>

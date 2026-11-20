@@ -46,7 +46,7 @@ Il banner di ogni demo dice con quale modello è stato compilato l'assembly (`ru
 | Cartella | Contenuto |
 |---|---|
 | [src/Demo.Shared](src/Demo.Shared) | `DemoHost` (riga di comando e menu), `Out` (log con tempo e thread), `FakeQuoteProvider` |
-| [demos/00-RuntimeAsync](demos/00-RuntimeAsync) | stessi sorgenti ([Code](demos/00-RuntimeAsync/Code)) compilati in due progetti: `Classic` e `Native` |
+| [demos/00-RuntimeAsync](demos/00-RuntimeAsync) | stessi sorgenti ([Code](demos/00-RuntimeAsync/Code)) compilati in due progetti: `Classic` e `Native`, con il suo [README](demos/00-RuntimeAsync/README.md) |
 | [demos/01-…06-](demos) | un progetto per Demo |
 | [benchmarks](benchmarks/BeyondAsyncAwait.Benchmarks) | BenchmarkDotNet: ogni benchmark gira due volte, `StateMachine` vs `RuntimeAsync` |
 
@@ -59,32 +59,17 @@ Il filo conduttore va **dal singolo valore allo stream**: Task → TCS → Async
 
 ### Demo 0 — Runtime Async: 4 promesse, 4 prove
 
-L'abstract promette IL più semplice, debug migliore, meno allocazioni, più velocità: ogni scenario ne dimostra una.
+[demos/00-RuntimeAsync](demos/00-RuntimeAsync): spiegazione, output e benchmark nel [README della Demo](demos/00-RuntimeAsync/README.md).
+
+L'abstract promette IL più semplice, debug migliore, meno allocazioni, più velocità: ogni scenario o benchmark ne dimostra una. Gli stessi sorgenti sono compilati in due progetti, `Classic` e `Native`.
 
 | Id | Nome | Cosa mostra |
 |---|---|---|
-| ★ 0.1 | `il` | Classic: metodo stub + state machine con `MoveNext` (63 + 248 byte di IL, 9 state machine nell'assembly). Native: 0 state machine, il metodo è marcato `MethodImplAttributes.Async (0x2000)` e l'`await` diventa `call AsyncHelpers::Await` (52 byte). |
-| ★ 0.2 | `stack` | Stack trace *live* di una catena di 3 metodi async: 19 frame contro 8. Dopo una sospensione reale (`Task.Yield`) in entrambi i modelli i chiamanti spariscono dallo stack: riprende la continuation. |
-| 0.3 | `elision` | `return task` senza `await` dentro un `using`: `ObjectDisposedException`. Con Runtime Async il motivo di performance per l'elision si riduce, la trappola resta. |
+| ★ 0.1 | `il` | Classic: stub + state machine con `MoveNext`. Native: nessuna state machine, il metodo è marcato `Async (0x2000)` e l'`await` diventa `call AsyncHelpers::Await`. |
+| ★ 0.2 | `stack` | Stack *live* di una catena di 3 metodi async: 19 frame contro 8. |
+| 0.3 | `elision` | `return task` dentro un `using`: `ObjectDisposedException` in entrambi i modelli. |
 
-```bash
-dotnet run --project demos/00-RuntimeAsync/RuntimeAsync.Classic -- il
-dotnet run --project demos/00-RuntimeAsync/RuntimeAsync.Native  -- il
-dotnet run -c Release --project benchmarks/BeyondAsyncAwait.Benchmarks -- --filter *AwaitChain* *Elision*
-```
-
-> Le state machine sono `class` in Debug e `struct` in Release: per mostrare la versione "vera" usa `-c Release`.
-
-Risultati **indicativi** (BenchmarkDotNet `--quick`, i7-11800H, .NET 11.0.0: rifalli sulla macchina della demo, senza `--quick`):
-
-| Benchmark | StateMachine | RuntimeAsync |
-|---|---|---|
-| 10 await che completano in modo sincrono | 62 ns, 0 B | **37 ns**, 0 B |
-| 10 await con sospensione reale | 1286 ns, 1204 B | **508 ns, 672 B** |
-| pass-through con `await` | 517 ns, 191 B | 364 ns, 168 B |
-| pass-through elided (`return task`) | 411 ns, 96 B | 334 ns, 104 B |
-
-Con le state machine l'elision faceva risparmiare ~20%; con Runtime Async meno del 10%, e restano solo le trappole semantiche (demo 0.3).
+Benchmark: 10 await con sospensione reale passano da 1286 ns e 1204 B a 508 ns e 672 B.
 
 ### Demo 1 — TaskCompletionSource: il mattone
 
