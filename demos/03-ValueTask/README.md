@@ -211,7 +211,7 @@ catch (InvalidOperationException ex)
 ```
 
 Il primo `await` passa da `GetResult`, che fa `Reset()` e rimette l'oggetto nel pool.
-Il secondo presenta il token della versione precedente: `ManualResetValueTaskSourceCore` non lo riconosce e lancia `InvalidOperationException`, che la demo cattura e stampa.
+Il secondo presenta il token della versione precedente: `ManualResetValueTaskSourceCore` non lo riconosce e solleva `InvalidOperationException`, che la demo cattura e stampa.
 
 *Una sorgente ingenua che ignora il token* (`NaivePooledQuoteFeed`): stesso pool, ma il token è sempre 0 e `GetResult` restituisce il prezzo che l'oggetto ha in quel momento.
 

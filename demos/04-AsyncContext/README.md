@@ -265,7 +265,7 @@ await HandleRequestAsync(publisher);
   Published at shutdown            20/25
 ```
 
-Il `Dispose()` dello scope trova un servizio che implementa solo `IAsyncDisposable` e lancia `InvalidOperationException`.
+Il `Dispose()` dello scope trova un servizio che implementa solo `IAsyncDisposable` e solleva `InvalidOperationException`.
 Il `DisposeAsync` del publisher non parte mai: nell'output non c'è né il batch da 5 né la riga `publisher: disposed`, e gli ultimi 5 restano nel buffer.
 È il rischio che la documentazione segnala per i tipi solo `IAsyncDisposable`: se il consumer chiama solo `Dispose`, `DisposeAsync` non viene mai chiamato.
 
@@ -353,7 +353,7 @@ Implementare solo `IAsyncDisposable` è legittimo quando una chiusura sincrona n
 - **Catturano il contesto** `Task.Run`, `ThreadPool.QueueUserWorkItem`, `Timer`, `CancellationToken.Register`, e ogni `await` lo fa fluire alla continuation. Per il lavoro che sopravvive alla richiesta: `ExecutionContext.SuppressFlow()` intorno all'avvio, oppure le varianti `Unsafe*` (`CancellationToken.UnsafeRegister`, `ThreadPool.UnsafeQueueUserWorkItem`).
 - **`ConfigureAwait(false)` non c'entra**: riguarda il `SynchronizationContext`, non l'`ExecutionContext`. Non esiste un modo, a livello di `await`, per non far fluire l'`ExecutionContext`.
 - **Un tipo solo `IAsyncDisposable`** richiede che tutti i suoi proprietari siano async: `await using`, `CreateAsyncScope()`, il `ServiceProvider` disposto con `DisposeAsync`.
-- **`DisposeAsync`** deve essere idempotente, aspettare il lavoro che chiude e non lanciare per un flush fallito.
+- **`DisposeAsync`** deve essere idempotente, aspettare il lavoro che chiude e non sollevare eccezioni per un flush fallito.
 - **Runtime Async non cambia nulla di tutto questo**: i tre scenari danno lo stesso output con `-p:RuntimeAsync=false`.
 
 ## Riferimenti

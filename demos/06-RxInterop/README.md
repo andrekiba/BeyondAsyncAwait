@@ -159,7 +159,7 @@ Un probe in [AsyncInPipelineDemo.cs](AsyncInPipelineDemo.cs) conta le chiamate i
 Requests().Subscribe(
     async seq =>
     {
-        // async void: Rx non lo aspetta. Se lanciasse, l'eccezione andrebbe al thread pool
+        // async void: Rx non lo aspetta. Se sollevasse un'eccezione, andrebbe al thread pool
         // e terminerebbe il processo: OnError non la vedrebbe mai.
         var quote = await probe.PriceAsync(seq);
         Out.Log($"#{seq} {quote.Symbol} = {quote.Price}");
@@ -678,7 +678,7 @@ In Rx classico il tipo non lo permette: `IDisposable.Dispose` è `void`.
 
 - Dove stanno le conversioni in Rx/Ix 7: `IObservable<T>.ToAsyncEnumerable()` è in `System.Interactive.Async` (`System.Linq.AsyncEnumerableEx`), non in `System.Reactive` né nel `System.Linq.AsyncEnumerable` della BCL.
 - Con `runtime-async=on` le uniche state machine rimaste nell'assembly sono quelle dei lambda `async void`, cioè le lambda passate a `Subscribe` nel 6.2 e nel 6.5: Runtime Async non copre `async void` (vedi [Demo 0](../00-RuntimeAsync/README.md)).
-- `await observable` restituisce l'*ultimo* valore al completamento, lancia `InvalidOperationException` se la sequenza è vuota e non ritorna mai se è infinita. Di' quale valore vuoi: `FirstAsync()`, `LastOrDefaultAsync()`. Ogni `await` è una sottoscrizione nuova, e con `RefCount` vuol dire una connessione nuova (6.4).
+- `await observable` restituisce l'*ultimo* valore al completamento, solleva `InvalidOperationException` se la sequenza è vuota e non ritorna mai se è infinita. Di' quale valore vuoi: `FirstAsync()`, `LastOrDefaultAsync()`. Ogni `await` è una sottoscrizione nuova, e con `RefCount` vuol dire una connessione nuova (6.4).
 - `task.ToObservable()` adatta un `Task` già partito: un risultato condiviso, `Retry` rivede lo stesso errore, il dispose non cancella niente. `Observable.FromAsync(ct => …)` è lazy: una chiamata per sottoscrizione e token cancellato al dispose. Dove si ritenta o si cancella, `FromAsync`.
 - Lavoro async in una pipeline: niente `Subscribe(async …)` (async void: nessun limite, `OnCompleted` in anticipo, eccezioni fuori da Rx). `SelectMany(async …)` è un merge senza limite e senza ordine; l'overload `SelectMany((x, ct) => …)` aggiunge la cancellazione, non un limite. Con `Select(x => Observable.FromAsync(ct => …))` scegli la politica: `Concat()` in ordine uno alla volta, `Merge(n)` al massimo *n*, `Switch()` solo l'ultimo con le altre cancellate.
 - `Replay(1).RefCount()` disconnette quando i sottoscrittori scendono a zero, e riconnette al successivo: giusto per sottoscrittori che restano, sbagliato per una cache letta con `await FirstAsync()`. L'overload di `RefCount` con `disconnectDelay` rimanda la disconnessione, non la evita. `AutoConnect` resta connesso finché non chiudi la connessione che ti passa nel callback `Action<IDisposable>`: se non la tieni, resta aperta per sempre.

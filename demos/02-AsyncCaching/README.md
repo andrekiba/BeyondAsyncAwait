@@ -139,14 +139,14 @@ getQuote = () => lazy.Value;
   Provider failures                1
 ```
 
-La factory del `Lazy` non ha lanciato: ha restituito un `Task`, che 100 ms dopo è fallito.
+La factory del `Lazy` non ha sollevato eccezioni: ha restituito un `Task`, che 100 ms dopo è fallito.
 Per il `Lazy` è un valore come un altro, e resta lì finché vive il `Lazy`.
 Il provider si è ripreso dopo la prima chiamata, ma la cache non se ne accorge: tutte e cinque le richieste ricevono l'errore della chiamata #1, e il provider non viene più chiamato.
 
-Nemmeno `LazyThreadSafetyMode.PublicationOnly`, che non mette in cache le eccezioni, servirebbe: qui la factory non lancia.
+Nemmeno `LazyThreadSafetyMode.PublicationOnly`, che non mette in cache le eccezioni, servirebbe: qui la factory non solleva eccezioni.
 E `PublicationOnly` lascia girare la factory su più thread insieme, cioè riporta lo stampede di 2.1.
 
-**Fixed.** In `AsyncLazy`, se il load fallisce, il `catch` sostituisce il `Lazy` prima di rilanciare:
+**Fixed.** In `AsyncLazy`, se il load fallisce, il `catch` sostituisce il `Lazy` prima di sollevare di nuovo l'eccezione:
 
 ```csharp
 async Task<T> LoadAsync(Lazy<Task<T>> instance)

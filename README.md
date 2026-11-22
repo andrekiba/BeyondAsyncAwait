@@ -132,7 +132,7 @@ Benchmark: il pooling builder porta la sospensione a 0 B, ma fa uscire il metodo
 
 | Id | Nome | Broken → Fixed |
 |---|---|---|
-| ★ 6.1 | `task-observable` | `await observable` dà l'*ultimo* valore, lancia se vuoto, non torna se infinito → `FirstAsync()`. `task.ToObservable().Retry(3)`: 3 tentativi, **1 sola chiamata** → `Observable.FromAsync(ct => …)`: 3 chiamate, e il dispose cancella il token. |
+| ★ 6.1 | `task-observable` | `await observable` dà l'*ultimo* valore, solleva un'eccezione se vuoto, non torna se infinito → `FirstAsync()`. `task.ToObservable().Retry(3)`: 3 tentativi, **1 sola chiamata** → `Observable.FromAsync(ct => …)`: 3 chiamate, e il dispose cancella il token. |
 | ★ 6.2 | `async-in-pipeline` | `Subscribe(async …)`: 6 in volo, `OnCompleted` a ~400 ms con lavoro fino a ~670 ms; `SelectMany(async …)`: nessun limite né cancellazione. Fixed: `Select(FromAsync)` + `Concat()` / `Merge(4)` / `Switch()` (7 chiamate cancellate). |
 | ★ 6.3 | `rx-to-channel` | `ToAsyncEnumerable()` di Ix: coda nascosta senza limite (~500.000 elementi, +34 MB, prezzo vecchio di 2 s). Con un `Channel` bounded(8) `DropOldest`: backlog 7, scarti contati, prezzo fresco. |
 | 6.4 | `refreshing-cache` | `Replay(1).RefCount()` letto con `await FirstAsync()`: 12 connessioni, il timer non scatta mai, **stale per sempre**. Con `AutoConnect()`: 1 connessione, refresh dal timer. |

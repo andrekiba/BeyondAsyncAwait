@@ -169,7 +169,7 @@ Scenario 1, il messaggio avvelenato:
 Il ✔ mente: il chiamante vede la pipeline completata, ma nel database ci sono 156 messaggi su 160.
 Il messaggio avvelenato uccide il worker di parse che lo riceve: l'eccezione resta nel suo `Task.Run`, che nessuno attende, e il messaggio sparisce senza finire da nessuna parte.
 Poi, a fine input, in ogni stadio il primo worker che trova l'input vuoto e completato chiama `output.Complete()` per tutti.
-Gli altri, in quel momento, o hanno ancora un elemento in mano, e il loro `WriteAsync` su un canale chiuso lancia `ChannelClosedException` (l'elemento è perso), oppure arrivano anche loro a `output.Complete()`, che su un canale già completato lancia anch'esso (`ChannelClosedException`, una `InvalidOperationException`).
+Gli altri, in quel momento, o hanno ancora un elemento in mano, e il loro `WriteAsync` su un canale chiuso solleva `ChannelClosedException` (l'elemento è perso), oppure arrivano anche loro a `output.Complete()`, che su un canale già completato solleva anch'esso un'eccezione (`ChannelClosedException`, una `InvalidOperationException`).
 In ogni stadio finisce bene un solo worker su quattro: tre stadi, 9 eccezioni, che nessuno vede finché il GC non finalizza i task falliti (`TaskScheduler.UnobservedTaskException`).
 I 4 messaggi mancanti sono il #100 e quelli che altri worker avevano in mano quando il canale si è chiuso sotto di loro.
 
@@ -184,7 +184,7 @@ Scenario 2, il provider giù:
   Exceptions nobody observed       4
 ```
 
-Ogni worker di enrich prende un trade, il provider lancia `ProviderException` e il worker muore: 4 eccezioni non osservate, e nessuno arriverà mai al `Complete()` del canale verso persist.
+Ogni worker di enrich prende un trade, il provider solleva `ProviderException` e il worker muore: 4 eccezioni non osservate, e nessuno arriverà mai al `Complete()` del canale verso persist.
 Persist e il chiamante aspettano un canale che non si completerà mai.
 A monte nessuno legge più: il canale verso enrich si riempie, i worker di parse restano bloccati su `WriteAsync`, poi si riempie il canale del source e si blocca anche lui.
 I 48 messaggi prodotti sono esattamente quelli che ci stanno: 4 nelle mani dei worker di enrich morti, 20 nel canale verso enrich, 4 nei worker di parse bloccati, 20 nel canale del source.
@@ -350,7 +350,7 @@ await foreach (var task in Task.WhenEach(StartQuotes()))
 
 Con `WhenAll` tutte le righe compaiono a 516 ms, nell'ordine delle richieste: la quotazione di GOOG, pronta dopo 50 ms, aspetta quella di NVDA.
 `Task.WhenEach` restituisce un `IAsyncEnumerable<Task<T>>` che produce i task man mano che completano, e ogni quotazione si mostra appena arriva.
-Produce il task, non il valore: `await task` prende il risultato, o rilancia l'eccezione di quella sola chiamata, e non sospende perché il task è già completato.
+Produce il task, non il valore: `await task` prende il risultato, o solleva di nuovo l'eccezione di quella sola chiamata, e non sospende perché il task è già completato.
 Prima di .NET 9 lo stesso risultato richiedeva un ciclo che chiamava ripetutamente `Task.WhenAny` per prendere il prossimo task completato.
 
 **`Channel.CreateUnboundedPrioritized`.** Un consumer elabora un ordine ogni 60 ms; arrivano sei ordini normali e, dopo 150 ms, due urgenti.
@@ -394,7 +394,7 @@ Il canale è unbounded: come in 5.1, nessuno frena il producer.
 - **Bounded per default.** Con `CreateUnbounded`, e con `CreateUnboundedPrioritized`, nessuno frena il producer: se è più veloce del consumer, la differenza diventa memoria e latenza, senza limite (5.1).
 - **Il `FullMode` lo sceglie il dato.** `Wait`, il default, quando niente può andare perso: il producer rallenta e il problema passa a monte. `DropOldest` quando conta solo il valore più recente. Esistono anche `DropNewest` (scarta l'elemento più recente nel canale) e `DropWrite` (scarta quello che si sta scrivendo).
 - **Con le modalità drop passa `itemDropped`.** È l'unico modo per contare, loggare o fare dispose di quello che il canale butta via.
-- **Il writer si completa una volta, quando hanno finito tutti.** Con più worker sullo stesso canale il completamento non spetta a un worker ma a chi li attende tutti (`Task.WhenAll`, poi `TryComplete`). `Complete` su un canale già completato lancia, `TryComplete` restituisce `false`.
+- **Il writer si completa una volta, quando hanno finito tutti.** Con più worker sullo stesso canale il completamento non spetta a un worker ma a chi li attende tutti (`Task.WhenAll`, poi `TryComplete`). `Complete` su un canale già completato solleva un'eccezione, `TryComplete` restituisce `false`.
 - **Gli errori viaggiano nei due sensi.** A valle con `TryComplete(ex)`: l'`await foreach` di chi legge termina con quell'eccezione. A monte con un token di cancellazione condiviso: senza, chi scrive su un canale pieno che nessuno legge più resta bloccato per sempre. A chi chiama arriva l'errore originale, non la cancellazione che ne è la conseguenza.
 - **Errore dell'elemento ≠ errore dello stadio.** Un messaggio malformato va in dead letter e la pipeline prosegue; un provider giù ferma tutto.
 - **Niente worker fire-and-forget.** Un `Task` fallito che nessuno attende si scopre solo quando il GC lo finalizza.

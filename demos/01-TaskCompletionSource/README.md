@@ -131,7 +131,7 @@ public Task<RpcReply> RequestAsync(string symbol, TimeSpan timeout, Cancellation
 
 void OnReply(RpcReply reply)
 {
-    // Mai rimossa; lancia se il timeout ha già completato il task.
+    // Mai rimossa; solleva un'eccezione se il timeout ha già completato il task.
     if (pending.TryGetValue(reply.Id, out var tcs))
         tcs.SetResult(reply);
 }
@@ -154,7 +154,7 @@ void OnReply(RpcReply reply)
 
 **Perché.** Tre errori diversi, che si sommano.
 
-- **`SetResult` su una TCS già completata lancia.** Per ogni risposta tardiva il timeout ha già chiamato `SetCanceled`, e `SetResult` lancia `InvalidOperationException`. L'eccezione non arriva al chiamante, che ha già avuto il suo timeout: esce dall'handler ed entra nel codice del bus. Qui `FakeBus` la cattura e la conta, come farebbe una libreria client: 600 eccezioni, una per risposta tardiva. Anche il controllo `IsCompleted` prima di `SetCanceled` non protegge: tra il controllo e la chiamata la risposta può arrivare.
+- **`SetResult` su una TCS già completata solleva un'eccezione.** Per ogni risposta tardiva il timeout ha già chiamato `SetCanceled`, e `SetResult` solleva `InvalidOperationException`. L'eccezione non arriva al chiamante, che ha già avuto il suo timeout: esce dall'handler ed entra nel codice del bus. Qui `FakeBus` la cattura e la conta, come farebbe una libreria client: 600 eccezioni, una per risposta tardiva. Anche il controllo `IsCompleted` prima di `SetCanceled` non protegge: tra il controllo e la chiamata la risposta può arrivare.
 - **Nessuno toglie le entry dal dizionario.** `OnReply` usa `TryGetValue` e non `TryRemove`, e nessun altro rimuove: ogni round lascia 1000 entry in più, comprese quelle completate con successo.
 - **Le registration restano attaccate al token della connessione.** `Register` restituisce una `CancellationTokenRegistration` che nessuno dispone: la lambda, e con lei la TCS, resta tra i callback del token finché la connessione vive. Anche togliendo le entry dal dizionario, la TCS resterebbe raggiungibile da lì. E la `CancellationTokenSource` del timeout non viene mai disposta.
 
@@ -188,7 +188,7 @@ public async Task<RpcReply> RequestAsync(string symbol, TimeSpan timeout, Cancel
 
 void OnReply(RpcReply reply)
 {
-    // Una risposta tardiva non trova niente: viene ignorata, non lanciata.
+    // Una risposta tardiva non trova niente: viene ignorata, senza sollevare eccezioni.
     if (pending.TryRemove(reply.Id, out var tcs))
         tcs.TrySetResult(reply);
 }
