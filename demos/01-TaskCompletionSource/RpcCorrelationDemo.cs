@@ -7,7 +7,8 @@ namespace BeyondAsyncAwait.Demo01;
 /// 1.2 — Request/response over a message bus: a TaskCompletionSource per request, correlated by id.
 /// The naive client never removes entries, never disposes its registrations on the connection token,
 /// and uses SetResult, so a reply arriving after the timeout throws inside the bus.
-/// Fixed: TrySet*, dispose CTS and registration, remove the entry in finally.
+/// Fixed: TrySet*, a TimeoutException distinct from the caller's cancellation, registrations disposed
+/// with the call, the entry removed in finally.
 /// </summary>
 sealed class RpcCorrelationDemo : Demo
 {
@@ -36,7 +37,7 @@ sealed class RpcCorrelationDemo : Demo
             timedOut += outcomes.Count(ok => !ok);
 
             // Late replies are still on the wire: give them time to arrive.
-            await Task.Delay(TimeSpan.FromMilliseconds(300));
+            await Task.Delay(TimeSpan.FromMilliseconds(300), connectionLifetime.Token);
 
             var heap = GC.GetTotalMemory(forceFullCollection: true);
             if (round == 1)
@@ -64,7 +65,7 @@ sealed class RpcCorrelationDemo : Demo
             await client.RequestAsync(symbol, Timeout, cancellationToken);
             return true;
         }
-        catch (OperationCanceledException)
+        catch (Exception ex) when (ex is TimeoutException or OperationCanceledException)
         {
             return false;
         }
@@ -100,14 +101,14 @@ sealed class NaiveRpcClient : IRpcClient
         pending[id] = tcs;
 
         // Never disposed: stays registered on the connection token, keeping tcs alive.
-        cancellationToken.Register(() => tcs.SetCanceled());
+        cancellationToken.Register(() => tcs.SetCanceled(cancellationToken));
 
         // Never disposed either.
         var timeoutCts = new CancellationTokenSource(timeout);
         timeoutCts.Token.Register(() =>
         {
             if (!tcs.Task.IsCompleted)
-                tcs.SetCanceled();
+                tcs.SetCanceled(timeoutCts.Token);
         });
 
         bus.Publish(id, symbol);
@@ -144,14 +145,16 @@ sealed class RpcClient : IRpcClient
 
         try
         {
-            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeoutCts.CancelAfter(timeout);
-            using var registration = timeoutCts.Token.Register(
-                static state => ((TaskCompletionSource<RpcReply>)state!).TrySetCanceled(), tcs);
+            // Timeout and cancellation complete the TCS differently: the caller can tell them apart.
+            using var timeoutCts = new CancellationTokenSource(timeout);
+            await using var onTimeout = timeoutCts.Token.Register(
+                static state => ((TaskCompletionSource<RpcReply>)state!).TrySetException(new TimeoutException()), tcs);
+            await using var onCancel = cancellationToken.Register(
+                static (state, token) => ((TaskCompletionSource<RpcReply>)state!).TrySetCanceled(token), tcs);
 
             bus.Publish(id, symbol);
             return await tcs.Task;
-            // Shorter alternative for the timeout part: await tcs.Task.WaitAsync(timeout, cancellationToken)
+            // Same semantics, shorter: await tcs.Task.WaitAsync(timeout, cancellationToken)
         }
         finally
         {

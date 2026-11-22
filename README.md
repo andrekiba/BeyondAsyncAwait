@@ -82,7 +82,7 @@ Benchmarks: 10 awaits with a real suspension go from 1286 ns and 1204 B to 508 n
 | Id | Name | Broken → Fixed |
 |---|---|---|
 | ★ 1.1 | `inline-continuations` | `SetResult` runs the handlers on the read loop, inside its lock: 5/5, delay up to 560 ms. With `RunContinuationsAsynchronously`: 0/5, 12 ms. |
-| ★ 1.2 | `rpc-correlation` | Request/response over a bus: 600 exceptions thrown into the bus, 3000 pending entries, heap +938 KB. With `TrySet*`, the registration disposed and `TryRemove` in `finally`: 0, 0, +0 KB. |
+| ★ 1.2 | `rpc-correlation` | Request/response over a bus: 600 exceptions thrown into the bus, 3000 pending entries, heap +995 KB. With `TrySet*`, the token passed to `TrySetCanceled`, the registrations disposed and `TryRemove` in `finally`: 0, 0, +2 KB. |
 | 1.3 | `manual-reset-event` | A naive `Reset` loses its waiters: 0/3 resume. With `CompareExchange`: 3/3. |
 
 ### Demo 2 — One value, many consumers: AsyncLazy and async caching

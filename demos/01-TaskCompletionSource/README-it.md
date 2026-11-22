@@ -119,14 +119,14 @@ public Task<RpcReply> RequestAsync(string symbol, TimeSpan timeout, Cancellation
     pending[id] = tcs;
 
     // Mai disposta: resta registrata sul token della connessione, e tiene viva la tcs.
-    cancellationToken.Register(() => tcs.SetCanceled());
+    cancellationToken.Register(() => tcs.SetCanceled(cancellationToken));
 
     // Mai disposta nemmeno questa.
     var timeoutCts = new CancellationTokenSource(timeout);
     timeoutCts.Token.Register(() =>
     {
         if (!tcs.Task.IsCompleted)
-            tcs.SetCanceled();
+            tcs.SetCanceled(timeoutCts.Token);
     });
     // …
 }
@@ -141,9 +141,9 @@ void OnReply(RpcReply reply)
 
 ```text
 ✘ bus: reply handler threw InvalidOperationException: An attempt was made to transition a task to a final state when it had already completed.
-   425 ms [t 15] round 1: 1000 requests (timeout 100 ms), pending entries 1000, heap 785 KB
-   852 ms [t 12] round 2: 1000 requests (timeout 100 ms), pending entries 2000, heap 1,236 KB
-  1273 ms [t 15] round 3: 1000 requests (timeout 100 ms), pending entries 3000, heap 1,723 KB
+   426 ms [t 16] round 1: 1000 requests (timeout 100 ms), pending entries 1000, heap 839 KB
+   848 ms [t 12] round 2: 1000 requests (timeout 100 ms), pending entries 2000, heap 1,355 KB
+  1273 ms [t 22] round 3: 1000 requests (timeout 100 ms), pending entries 3000, heap 1,835 KB
 
 ── Results
   Replies received                 2100
@@ -151,7 +151,7 @@ void OnReply(RpcReply reply)
   Late replies (after the timeout) 600
   Exceptions thrown into the bus   600
   Pending entries left             3000
-  Heap growth, round 1 → 3         +938 KB
+  Heap growth, round 1 → 3         +995 KB
 ```
 
 **Perché.** Tre errori diversi, che si sommano.
@@ -160,7 +160,7 @@ void OnReply(RpcReply reply)
 - **Nessuno toglie le entry dal dizionario.** `OnReply` usa `TryGetValue` e non `TryRemove`, e nessun altro rimuove: ogni round lascia 1000 entry in più, comprese quelle completate con successo.
 - **Le registration restano attaccate al token della connessione.** `Register` restituisce una `CancellationTokenRegistration` che nessuno dispone: la lambda, e con lei la TCS, resta tra i callback del token finché la connessione vive. Anche togliendo le entry dal dizionario, la TCS resterebbe raggiungibile da lì. E la `CancellationTokenSource` del timeout non viene mai disposta.
 
-Il risultato è un heap che cresce di 450-490 KB a round, su una connessione che in produzione vive per ore.
+Il risultato è un heap che cresce di 480-520 KB a round, su una connessione che in produzione vive per ore.
 
 **Fixed.**
 
@@ -173,14 +173,16 @@ public async Task<RpcReply> RequestAsync(string symbol, TimeSpan timeout, Cancel
 
     try
     {
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(timeout);
-        using var registration = timeoutCts.Token.Register(
-            static state => ((TaskCompletionSource<RpcReply>)state!).TrySetCanceled(), tcs);
+        // Timeout e cancellazione completano la TCS in modo diverso: il chiamante li distingue.
+        using var timeoutCts = new CancellationTokenSource(timeout);
+        await using var onTimeout = timeoutCts.Token.Register(
+            static state => ((TaskCompletionSource<RpcReply>)state!).TrySetException(new TimeoutException()), tcs);
+        await using var onCancel = cancellationToken.Register(
+            static (state, token) => ((TaskCompletionSource<RpcReply>)state!).TrySetCanceled(token), tcs);
 
         bus.Publish(id, symbol);
         return await tcs.Task;
-        // Alternativa più corta per la parte di timeout: await tcs.Task.WaitAsync(timeout, cancellationToken)
+        // Stessa semantica, più corto: await tcs.Task.WaitAsync(timeout, cancellationToken)
     }
     finally
     {
@@ -197,9 +199,9 @@ void OnReply(RpcReply reply)
 ```
 
 ```text
-   420 ms [t 10] round 1: 1000 requests (timeout 100 ms), pending entries 0, heap 449 KB
-   840 ms [t 11] round 2: 1000 requests (timeout 100 ms), pending entries 0, heap 449 KB
-  1260 ms [t 20] round 3: 1000 requests (timeout 100 ms), pending entries 0, heap 449 KB
+   421 ms [t 18] round 1: 1000 requests (timeout 100 ms), pending entries 0, heap 445 KB
+   837 ms [t 19] round 2: 1000 requests (timeout 100 ms), pending entries 0, heap 447 KB
+  1256 ms [t 20] round 3: 1000 requests (timeout 100 ms), pending entries 0, heap 448 KB
 
 ── Results
   Replies received                 2100
@@ -207,16 +209,18 @@ void OnReply(RpcReply reply)
   Late replies (after the timeout) 600
   Exceptions thrown into the bus   0
   Pending entries left             0
-  Heap growth, round 1 → 3         0 KB
+  Heap growth, round 1 → 3         +2 KB
 ```
 
-- **`TrySetResult` e `TrySetCanceled`.** Risposta, timeout e cancellazione della connessione competono per completare la stessa TCS: vince il primo, gli altri ricevono `false` invece di un'eccezione.
+- **`TrySetResult`, `TrySetException`, `TrySetCanceled`.** Risposta, timeout e cancellazione della connessione competono per completare la stessa TCS: vince il primo, gli altri ricevono `false` invece di un'eccezione.
+- **Timeout e cancellazione restano distinguibili.** Il timeout completa la TCS con una `TimeoutException`; la cancellazione con `TrySetCanceled(token)`, e l'`OperationCanceledException` che arriva al chiamante porta il suo token (`ex.CancellationToken == cancellationToken`). Senza token il chiamante riceverebbe `CancellationToken.None` e non saprebbe se è scaduto il timeout o se ha cancellato lui. È la stessa semantica di `Task.WaitAsync(timeout, cancellationToken)`.
 - **L'entry esce dal dizionario in due punti**: in `OnReply` con `TryRemove` quando arriva la risposta, nel `finally` in caso di timeout o cancellazione. Una risposta tardiva non trova niente e viene ignorata.
-- **Timeout e registration vivono quanto la chiamata.** La linked CTS unisce il timeout al token della connessione, e la registration sta sul suo token, non su quello della connessione; i due `using` li rilasciano entrambi a fine chiamata. La lambda è `static` e riceve la TCS come stato: nessuna closure per richiesta.
+- **Le registration vivono quanto la chiamata.** Una sta sul token del timeout, l'altra sul token della connessione, e a fine chiamata vengono rilasciate entrambe; il `using` dispone anche la `CancellationTokenSource` del timeout. Le lambda sono `static` e ricevono la TCS come stato (l'overload di `Register` con `(state, token)` passa anche il token): nessuna closure per richiesta.
+- **`await using` per le registration.** `CancellationTokenRegistration` implementa anche `IAsyncDisposable`: se la callback sta girando in quel momento su un altro thread, `Dispose()` la aspetta bloccando il thread, `DisposeAsync()` la aspetta senza bloccarlo. Qui la callback è un `TrySet*` e l'attesa sarebbe brevissima, ma in un metodo async è la forma giusta. `CancellationTokenSource` implementa solo `IDisposable`, quindi resta `using`.
 - **`RunContinuationsAsynchronously`**, per lo stesso motivo dello scenario 1.1: `TrySetResult` gira nel codice di consegna del bus.
 
-Per il chiamante le due versioni sono indistinguibili: 2100 risposte e 900 timeout in entrambe.
-Cambia tutto quello che resta indietro: 0 eccezioni nel bus, 0 entry pendenti, heap fermo a 449 KB.
+Per il chiamante i conteggi sono gli stessi: 2100 risposte e 900 timeout in entrambe le versioni, solo che nel fixed i timeout arrivano come `TimeoutException`.
+Cambia tutto quello che resta indietro: 0 eccezioni nel bus, 0 entry pendenti, heap fermo intorno ai 445 KB.
 
 Il messaggio: una TCS ha un ciclo di vita che il compilatore non gestisce per te.
 Ogni posto in cui la registri (un dizionario, un token) ha bisogno di un'uscita in `finally`, e quando più parti possono completarla si usa `TrySet*`.
@@ -299,8 +303,9 @@ Se una primitiva la ricicla, la sostituzione va fatta solo quando è completata,
 
 - **Crea le TCS con `RunContinuationsAsynchronously`** quando a completarle è codice che non controlli o che tiene un lock: un read loop, un timer, l'handler di un bus. Senza, quel codice esegue le tue continuation (1.1).
 - **Usa `TrySet*` quando più parti possono completare la stessa TCS**: risposta, timeout, cancellazione, shutdown. `Set*` va bene solo se sei certo di essere l'unico, e un controllo `IsCompleted` prima non basta (1.2).
-- **Ogni registrazione ha la sua uscita.** Entry in un dizionario → `TryRemove` in `finally`; `CancellationToken.Register` → dispose della `CancellationTokenRegistration`; linked CTS → `using`. Un token che vive quanto la connessione tiene vivo tutto quello che ci registri sopra.
-- **`Task.WaitAsync(timeout, cancellationToken)`** (.NET 6+) è l'alternativa più corta a linked CTS e registration, indicata nel sorgente di 1.2. Smette di aspettare senza completare la TCS, quindi la rimozione nel `finally` serve lo stesso. La stessa API, applicata a ogni chiamante, risolve la cancellazione condivisa di [Demo 2](../02-AsyncCaching/README-it.md).
+- **Passa il token a `TrySetCanceled(token)`**, e tieni il timeout distinto dalla cancellazione (`TimeoutException`): chi riceve l'eccezione deve poter capire chi ha interrotto l'attesa.
+- **Ogni registrazione ha la sua uscita.** Entry in un dizionario → `TryRemove` in `finally`; `CancellationToken.Register` → dispose della `CancellationTokenRegistration`, con `await using` in un metodo async; `CancellationTokenSource` → `using`. Un token che vive quanto la connessione tiene vivo tutto quello che ci registri sopra.
+- **`Task.WaitAsync(timeout, cancellationToken)`** (.NET 6+) è l'alternativa più corta a CTS del timeout e registration, con la stessa semantica, indicata nel sorgente di 1.2. Smette di aspettare senza completare la TCS, quindi la rimozione nel `finally` serve lo stesso. La stessa API, applicata a ogni chiamante, risolve la cancellazione condivisa di [Demo 2](../02-AsyncCaching/README-it.md).
 - **Una TCS non si resetta.** Per riusare un segnale la si sostituisce, solo quando è completata e con `CompareExchange` (1.3). Per riusare la sorgente stessa senza allocare un `Task` a operazione c'è `IValueTaskSource` su `ManualResetValueTaskSourceCore<T>`: vedi [Demo 3](../03-ValueTask/README-it.md).
 - Gli output di questa pagina vengono da una build con Runtime Async attivo, il default del repo ([Directory.Build.targets](../../Directory.Build.targets)): le continuation inline dello scenario 1.1 ci sono anche lì.
 
