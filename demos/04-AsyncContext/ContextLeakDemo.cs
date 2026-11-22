@@ -66,12 +66,12 @@ sealed class ContextLeakDemo : Demo
                 {
                     // Nothing of the current request flows into work that outlives it.
                     using (ExecutionContext.SuppressFlow())
-                        loop = Task.Run(LoopAsync);
+                        loop = Task.Run(LoopAsync, stop.Token);
                     shutdown.UnsafeRegister(_ => Background("flushing subscriptions on shutdown"), null);
                 }
                 else
                 {
-                    loop = Task.Run(LoopAsync);
+                    loop = Task.Run(LoopAsync, stop.Token);
                     shutdown.Register(() => Background("flushing subscriptions on shutdown"));
                 }
             }
@@ -105,7 +105,7 @@ sealed class ContextLeakDemo : Demo
             }
             else
             {
-                Out.Log($"[tenant=-] background: {what}");
+                Out.Log($"[tenant=(null)] background: {what}");
             }
         }
     }

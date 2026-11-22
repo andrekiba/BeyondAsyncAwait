@@ -164,18 +164,18 @@ Three requests, three tenants: `acme` wakes the singleton up, then `globex` and 
 In the broken variant `EnsureStarted` does what comes naturally:
 
 ```csharp
-loop = Task.Run(LoopAsync);
+loop = Task.Run(LoopAsync, stop.Token);
 shutdown.Register(() => Background("flushing subscriptions on shutdown"));
 ```
 
 ```text
-    61 ms [t  5] [tenant=acme] request: served quotes
-   124 ms [t  5] [tenant=initech] request: served quotes
-   124 ms [t  7] [tenant=globex] request: served quotes
+    62 ms [t  4] [tenant=acme] request: served quotes
+   124 ms [t  4] [tenant=initech] request: served quotes
+   125 ms [t  6] [tenant=globex] request: served quotes
 ✘ [tenant=acme] background: refreshing price cache
 ✘ [tenant=acme] background: refreshing price cache
 ✘ [tenant=acme] background: refreshing price cache
-   527 ms [t  7] application stopping
+   536 ms [t  6] application stopping
 ✘ [tenant=acme] background: flushing subscriptions on shutdown
   Background lines tagged 'acme'   4/4
 ```
@@ -199,23 +199,24 @@ if (suppressFlow)
 {
     // Nothing of the current request flows into work that outlives it.
     using (ExecutionContext.SuppressFlow())
-        loop = Task.Run(LoopAsync);
+        loop = Task.Run(LoopAsync, stop.Token);
     shutdown.UnsafeRegister(_ => Background("flushing subscriptions on shutdown"), null);
 }
 ```
 
 - `Task.Run` has no `Unsafe` variant: you suppress the flow around the call. `ExecutionContext.SuppressFlow()` returns an `AsyncFlowControl`, and the `using` restores the flow as soon as the task has started.
 - For the token there's `CancellationToken.UnsafeRegister`, which doesn't capture the `ExecutionContext` and doesn't flow it into the callback.
+- The token passed to `Task.Run` is something else: `stop.Token`, the one the loop observes, and it only matters if it's cancelled before the loop starts. `Task.Run` registers on it with `UnsafeRegister`, so it doesn't capture the context, in either variant.
 
 ```text
-    61 ms [t  7] [tenant=acme] request: served quotes
-   123 ms [t  7] [tenant=initech] request: served quotes
-   123 ms [t  8] [tenant=globex] request: served quotes
-   153 ms [t  8] [tenant=-] background: refreshing price cache
-   309 ms [t  8] [tenant=-] background: refreshing price cache
-   466 ms [t  8] [tenant=-] background: refreshing price cache
-   529 ms [t  7] application stopping
-   529 ms [t  7] [tenant=-] background: flushing subscriptions on shutdown
+    60 ms [t  4] [tenant=acme] request: served quotes
+   122 ms [t  4] [tenant=initech] request: served quotes
+   122 ms [t  8] [tenant=globex] request: served quotes
+   155 ms [t  8] [tenant=(null)] background: refreshing price cache
+   311 ms [t  8] [tenant=(null)] background: refreshing price cache
+   468 ms [t  8] [tenant=(null)] background: refreshing price cache
+   532 ms [t  8] application stopping
+   532 ms [t  8] [tenant=(null)] background: flushing subscriptions on shutdown
   Background lines tagged 'acme'   0/4
 ```
 
