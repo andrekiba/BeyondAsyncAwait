@@ -1,37 +1,39 @@
-# Demo 5 — Molti valori, pull: Channels
+# Demo 5 — Many values, pull: Channels
 
-Fino a Demo 4 ogni operazione asincrona produce un valore: un `Task<T>`, una `TaskCompletionSource`, un `AsyncLazy<T>`, un `ValueTask<T>`.
-Qui QuoteHub riceve uno stream: tick di prezzo che arrivano più in fretta di quanto il database riesca a salvarli, e messaggi che attraversano più stadi di elaborazione.
-Un `Channel<T>` è la coda asincrona tra chi produce e chi consuma, ed è *pull*: il consumer legge quando è pronto, e quando il producer va più veloce decide il canale cosa succede.
-Demo 6 farà lo stesso viaggio in *push*, con Rx.NET.
+**English** · [Italiano](README-it.md)
 
-Le API si imparano in pochi minuti: `WriteAsync`, `ReadAllAsync`, `Complete`.
-Quello che conta in produzione sono le decisioni intorno: quanto può crescere la coda e cosa fare quando è piena (5.1), chi chiude un canale e come viaggia un errore tra gli stadi di una pipeline (5.2).
-Sbagliarle non dà errori di compilazione, e il codice sbagliato in code review sembra ragionevole: dà una coda che si mangia la memoria, una pipeline che dice "completato" e intanto perde messaggi, o che resta appesa per sempre quando un servizio esterno va giù.
-Lo scenario 5.3 aggiunge due strumenti di .NET 9 per gestire molti risultati nell'ordine giusto.
+Up to Demo 4, every asynchronous operation produces a single value: a `Task<T>`, a `TaskCompletionSource`, an `AsyncLazy<T>`, a `ValueTask<T>`.
+Here QuoteHub receives a stream: price ticks that arrive faster than the database can save them, and messages that flow through several processing stages.
+A `Channel<T>` is the asynchronous queue between whoever produces and whoever consumes, and it's *pull*-based: the consumer reads when it's ready, and when the producer runs faster, the channel decides what happens.
+Demo 6 takes the same journey *push*-based, with Rx.NET.
 
-## Come si lancia
+The API takes a few minutes to learn: `WriteAsync`, `ReadAllAsync`, `Complete`.
+What matters in production are the decisions around it: how far the queue may grow and what to do when it's full (5.1), who closes a channel and how an error travels between the stages of a pipeline (5.2).
+Getting them wrong produces no compile errors, and the wrong code looks reasonable in code review: what you get is a queue that eats memory, a pipeline that says "completed" while losing messages, or one that hangs forever when an external service goes down.
+Scenario 5.3 adds two .NET 9 tools for handling many results in the right order.
+
+## How to run
 
 ```bash
-dotnet run --project demos/05-Channels                        # menu interattivo
-dotnet run --project demos/05-Channels -- 5.1                 # broken, Invio, fixed
-dotnet run --project demos/05-Channels -- pipeline --fixed    # solo la variante fixed
-dotnet run --project demos/05-Channels -- all --no-pause      # tutti gli scenari, senza pause
+dotnet run --project demos/05-Channels                        # interactive menu
+dotnet run --project demos/05-Channels -- 5.1                 # broken, Enter, fixed
+dotnet run --project demos/05-Channels -- pipeline --fixed    # fixed variant only
+dotnet run --project demos/05-Channels -- all --no-pause      # all scenarios, no pauses
 ```
 
-Da IDE ci sono il profilo `menu` e uno per scenario: `5.1 backpressure`, `5.2 pipeline`, `5.3 when-each`.
-Lo scenario 5.3 non ha varianti e gira una volta sola.
+In an IDE there's the `menu` profile plus one per scenario: `5.1 backpressure`, `5.2 pipeline`, `5.3 when-each`.
+Scenario 5.3 has no variants and runs only once.
 
-I numeri qui sotto vengono da un'esecuzione in Debug su .NET 11.0.0.
-Quelli che dipendono dai tempi (elementi in coda, memoria, età del dato, millisecondi) cambiano da un'esecuzione all'altra: sono i valori di quell'esecuzione.
+The numbers below come from a Debug run on .NET 11.0.0.
+The timing-dependent ones (queued items, memory, data age, milliseconds) change from run to run: these are the values from that run.
 
-## ★ 5.1 `backpressure` — quando il producer va più veloce
+## ★ 5.1 `backpressure` — when the producer runs faster
 
-In [BackpressureDemo.cs](BackpressureDemo.cs) il producer è il feed di mercato: 100 tick ogni 50 ms, ciascuno con il suo messaggio grezzo da 1 KB.
-Il consumer li persiste: 10 tick, poi 50 ms di round-trip verso il database. Sulla carta 2000 tick al secondo contro 200.
-Ogni scenario dura 2,5 secondi e ogni 500 ms stampa i tick prodotti, persistiti, in coda (`Reader.Count`) e scartati, l'età dell'ultimo tick persistito e la memoria trattenuta, misurata dopo una garbage collection completa.
+In [BackpressureDemo.cs](BackpressureDemo.cs) the producer is the market feed: 100 ticks every 50 ms, each with its own 1 KB raw message.
+The consumer persists them: 10 ticks, then a 50 ms round-trip to the database. On paper, 2000 ticks per second against 200.
+Each scenario lasts 2.5 seconds, and every 500 ms it prints the ticks produced, persisted, queued (`Reader.Count`) and dropped, the age of the last persisted tick, and the memory held, measured after a full garbage collection.
 
-Il producer è lo stesso in tutte le varianti, e non sa niente del canale che ha davanti:
+The producer is the same in every variant, and knows nothing about the channel in front of it:
 
 ```csharp
 while (true)
@@ -47,7 +49,7 @@ while (true)
 }
 ```
 
-**Broken.** Il canale è unbounded:
+**Broken.** The channel is unbounded:
 
 ```csharp
 var channel = mode switch
@@ -70,20 +72,20 @@ var channel = mode switch
 ✘ The queue grows without limit: memory and latency climb until the process dies.
 ```
 
-Su un canale unbounded c'è sempre posto, quindi `WriteAsync` completa subito e il producer non aspetta mai.
-In questa esecuzione il producer scrive 1626 tick al secondo e il consumer ne persiste 164: la differenza diventa coda, circa 700 tick in più ogni mezzo secondo.
-Ogni tick in coda trattiene il suo KB, e la memoria sale di pari passo: +4,0 MB dopo 2,5 secondi.
-E siccome il canale è FIFO, il consumer persiste tick sempre più vecchi: l'ultimo prezzo salvato ha 2,2 secondi.
-Niente ferma la crescita: con un'esecuzione più lunga memoria e latenza continuano a salire.
+An unbounded channel always has room, so `WriteAsync` completes immediately and the producer never waits.
+In this run the producer writes 1626 ticks per second and the consumer persists 164: the difference becomes queue, about 700 more ticks every half second.
+Every queued tick holds on to its KB, and memory climbs in lockstep: +4.0 MB after 2.5 seconds.
+And since the channel is FIFO, the consumer persists older and older ticks: the last price saved is 2.2 seconds old.
+Nothing stops the growth: in a longer run, memory and latency keep climbing.
 
-**Fixed.** Lo stesso producer e lo stesso consumer, con un canale bounded da 100 elementi, in due modalità:
+**Fixed.** The same producer and the same consumer, with a bounded channel of 100 items, in two modes:
 
 ```csharp
 var channel = mode switch
 {
     // …
     Mode.Wait => Channel.CreateBounded<Tick>(new BoundedChannelOptions(Capacity) { FullMode = BoundedChannelFullMode.Wait }),
-    // itemDropped: l'unico modo per sapere (contare, loggare, fare dispose di) cosa ha buttato via DropOldest
+    // itemDropped: the only way to know (count, log, dispose) what DropOldest threw away
     _ => Channel.CreateBounded<Tick>(
         new BoundedChannelOptions(Capacity) { FullMode = BoundedChannelFullMode.DropOldest },
         itemDropped: _ => stats.OnDropped())
@@ -109,52 +111,52 @@ var channel = mode switch
 Which FullMode is right is a business decision, not a technical one.
 ```
 
-| Dopo 2,5 s | Unbounded | Bounded(100) `Wait` | Bounded(100) `DropOldest` |
+| After 2.5 s | Unbounded | Bounded(100) `Wait` | Bounded(100) `DropOldest` |
 |---|---|---|---|
-| Producer | 1626 tick/s | **204 tick/s** | 1640 tick/s |
-| Consumer | 164 tick/s | 164 tick/s | 164 tick/s |
-| In coda | 3655 | 100 | 100 |
-| Scartati (`itemDropped`) | 0 | 0 | 3590 |
-| Età dell'ultimo tick persistito | 2248 ms | 625 ms | **62 ms** |
-| Memoria trattenuta | +4,0 MB | +0,1 MB | +0,1 MB |
+| Producer | 1626 ticks/s | **204 ticks/s** | 1640 ticks/s |
+| Consumer | 164 ticks/s | 164 ticks/s | 164 ticks/s |
+| Queued | 3655 | 100 | 100 |
+| Dropped (`itemDropped`) | 0 | 0 | 3590 |
+| Age of the last persisted tick | 2248 ms | 625 ms | **62 ms** |
+| Memory held | +4.0 MB | +0.1 MB | +0.1 MB |
 
-- **`Wait`**: quando il canale è pieno, `WriteAsync` aspetta che si liberi un posto. È la backpressure: il producer rallenta al passo del consumer (510 prodotti = 410 persistiti + 100 in coda), la memoria resta piatta e non si perde niente. Ma ogni tick aspetta dietro agli altri 100: a 164 tick al secondo sono circa 0,6 secondi, i 625 ms dell'output. E il problema passa a monte: chi alimenta il producer deve saper aspettare, o accumulare da qualche altra parte. È la scelta giusta per gli ordini.
-- **`DropOldest`**: la scrittura non aspetta mai. Quando il canale è pieno butta via l'elemento più vecchio per fare posto al nuovo. Il producer resta a piena velocità, la coda non supera 100 elementi, e siccome contiene solo i tick più recenti il prezzo persistito ha al massimo qualche decina di millisecondi. I 3590 tick scartati li conta `itemDropped`: senza il callback sparirebbero senza traccia. È la scelta giusta per i prezzi, dove un tick superato da uno più recente non vale più niente.
+- **`Wait`**: when the channel is full, `WriteAsync` waits for a slot to free up. This is backpressure: the producer slows down to the consumer's pace (510 produced = 410 persisted + 100 queued), memory stays flat and nothing is lost. But every tick waits behind the other 100: at 164 ticks per second that's about 0.6 seconds, the 625 ms in the output. And the problem moves upstream: whatever feeds the producer must be able to wait, or buffer somewhere else. It's the right choice for orders.
+- **`DropOldest`**: the write never waits. When the channel is full, it throws away the oldest item to make room for the new one. The producer stays at full speed, the queue never exceeds 100 items, and since it holds only the most recent ticks, the persisted price is at most a few tens of milliseconds old. The 3590 dropped ticks are counted by `itemDropped`: without the callback they would vanish without a trace. It's the right choice for prices, where a tick superseded by a newer one is worth nothing.
 
-Un canale unbounded non è una scelta: rimanda il problema finché c'è memoria.
-Con un canale bounded la domanda diventa *cosa fare quando è pieno*, e la risposta dipende dal dato, non dalla tecnica.
+An unbounded channel isn't a choice: it postpones the problem for as long as there's memory.
+With a bounded channel the question becomes *what to do when it's full*, and the answer depends on the data, not on the technology.
 
-## ★ 5.2 `pipeline` — completamento ed errori tra gli stadi
+## ★ 5.2 `pipeline` — completion and errors between stages
 
-In [PipelineDemo.cs](PipelineDemo.cs) i messaggi del bus attraversano quattro stadi: source → parse → enrich (il prezzo dal `FakeQuoteProvider`, 20 ms) → persist (un insert da 5 ms).
-Ogni stadio ha 4 worker, e tra uno stadio e l'altro c'è un canale `Bounded(20)`.
-Il chiamante legge le ricevute dall'ultimo canale con `await foreach` finché il canale non si completa, con un timeout di 3 secondi.
+In [PipelineDemo.cs](PipelineDemo.cs) the bus messages flow through four stages: source → parse → enrich (the price from `FakeQuoteProvider`, 20 ms) → persist (a 5 ms insert).
+Each stage has 4 workers, and between one stage and the next there's a `Bounded(20)` channel.
+The caller reads the receipts from the last channel with `await foreach` until the channel completes, with a 3-second timeout.
 
-Ogni variante esegue due scenari:
+Each variant runs two scenarios:
 
-1. 160 messaggi, tra cui un messaggio avvelenato, il #100 (`100|MSFT|ten`: la quantità non è un numero), poi la fine normale dell'input;
-2. il provider di quotazioni va giù (`FailNext(int.MaxValue)`: ogni chiamata fallisce).
+1. 160 messages, including a poison message, #100 (`100|MSFT|ten`: the quantity isn't a number), then the normal end of input;
+2. the quote provider goes down (`FailNext(int.MaxValue)`: every call fails).
 
-**Broken.** Ogni stadio lancia i suoi worker e se ne dimentica:
+**Broken.** Each stage fires off its workers and forgets about them:
 
 ```csharp
-// Broken: in code review sembra ragionevole.
+// Broken: looks reasonable in a code review.
 static void StartStageBroken<TIn, TOut>(ChannelReader<TIn> input, ChannelWriter<TOut> output, Func<TIn, CancellationToken, Task<TOut>> transform)
 {
     for (var i = 0; i < Workers; i++)
     {
-        _ = Task.Run(async () =>                         // fire-and-forget: un worker che fallisce muore in silenzio
+        _ = Task.Run(async () =>                         // fire-and-forget: a failing worker dies in silence
         {
             await foreach (var item in input.ReadAllAsync())
                 await output.WriteAsync(await transform(item, CancellationToken.None));
 
-            output.Complete();                           // il PRIMO worker che finisce chiude il canale per tutti gli altri
+            output.Complete();                           // the FIRST worker to finish closes the channel for all the others
         });
     }
 }
 ```
 
-Scenario 1, il messaggio avvelenato:
+Scenario 1, the poison message:
 
 ```text
 ── Scenario 1: a poison message, then a normal end of input
@@ -166,14 +168,14 @@ Scenario 1, il messaggio avvelenato:
   Exceptions nobody observed       9
 ```
 
-Il ✔ mente: il chiamante vede la pipeline completata, ma nel database ci sono 156 messaggi su 160.
-Il messaggio avvelenato uccide il worker di parse che lo riceve: l'eccezione resta nel suo `Task.Run`, che nessuno attende, e il messaggio sparisce senza finire da nessuna parte.
-Poi, a fine input, in ogni stadio il primo worker che trova l'input vuoto e completato chiama `output.Complete()` per tutti.
-Gli altri, in quel momento, o hanno ancora un elemento in mano, e il loro `WriteAsync` su un canale chiuso solleva `ChannelClosedException` (l'elemento è perso), oppure arrivano anche loro a `output.Complete()`, che su un canale già completato solleva anch'esso un'eccezione (`ChannelClosedException`, una `InvalidOperationException`).
-In ogni stadio finisce bene un solo worker su quattro: tre stadi, 9 eccezioni, che nessuno vede finché il GC non finalizza i task falliti (`TaskScheduler.UnobservedTaskException`).
-I 4 messaggi mancanti sono il #100 e quelli che altri worker avevano in mano quando il canale si è chiuso sotto di loro.
+The ✔ lies: the caller sees the pipeline complete, but the database holds 156 messages out of 160.
+The poison message kills the parse worker that receives it: the exception stays inside its `Task.Run`, which nobody awaits, and the message vanishes without ending up anywhere.
+Then, at the end of input, in each stage the first worker that finds the input empty and completed calls `output.Complete()` for everyone.
+At that moment the others either still have an item in hand, and their `WriteAsync` on a closed channel throws `ChannelClosedException` (the item is lost), or they too reach `output.Complete()`, which on an already completed channel throws as well (`ChannelClosedException`, an `InvalidOperationException`).
+In each stage only one worker out of four ends cleanly: three stages, 9 exceptions, which nobody sees until the GC finalizes the faulted tasks (`TaskScheduler.UnobservedTaskException`).
+The 4 missing messages are #100 and the ones other workers had in hand when the channel closed underneath them.
 
-Scenario 2, il provider giù:
+Scenario 2, the provider down:
 
 ```text
 ── Scenario 2: the quote provider goes down
@@ -184,16 +186,16 @@ Scenario 2, il provider giù:
   Exceptions nobody observed       4
 ```
 
-Ogni worker di enrich prende un trade, il provider solleva `ProviderException` e il worker muore: 4 eccezioni non osservate, e nessuno arriverà mai al `Complete()` del canale verso persist.
-Persist e il chiamante aspettano un canale che non si completerà mai.
-A monte nessuno legge più: il canale verso enrich si riempie, i worker di parse restano bloccati su `WriteAsync`, poi si riempie il canale del source e si blocca anche lui.
-I 48 messaggi prodotti sono esattamente quelli che ci stanno: 4 nelle mani dei worker di enrich morti, 20 nel canale verso enrich, 4 nei worker di parse bloccati, 20 nel canale del source.
-Senza il timeout del chiamante l'attesa non finirebbe mai, e i task bloccati restano lì.
+Each enrich worker picks up a trade, the provider throws `ProviderException` and the worker dies: 4 unobserved exceptions, and nobody will ever reach the `Complete()` of the channel to persist.
+Persist and the caller wait on a channel that will never complete.
+Upstream, nobody reads anymore: the channel to enrich fills up, the parse workers stay blocked on `WriteAsync`, then the source's channel fills up and the source blocks too.
+The 48 messages produced are exactly as many as fit: 4 in the hands of the dead enrich workers, 20 in the channel to enrich, 4 in the blocked parse workers, 20 in the source's channel.
+Without the caller's timeout the wait would never end, and the blocked tasks stay there.
 
-**Fixed.** Lo stadio possiede i suoi worker, li attende tutti, e completa il suo output una volta sola:
+**Fixed.** The stage owns its workers, awaits all of them, and completes its output only once:
 
 ```csharp
-// Fixed: lo stadio possiede i suoi worker e completa il suo output esattamente una volta.
+// Fixed: the stage owns its workers and completes its output exactly once.
 static async Task RunStageAsync<TIn, TOut>(string name, ChannelReader<TIn> input, ChannelWriter<TOut> output,
     Func<TIn, CancellationToken, Task<TOut>> transform, PipelineContext context)
 {
@@ -210,7 +212,7 @@ static async Task RunStageAsync<TIn, TOut>(string name, ChannelReader<TIn> input
                 }
                 catch (PoisonMessageException ex)
                 {
-                    context.DeadLetters.Enqueue(ex.MessageId);   // errore dell'elemento: parcheggialo e vai avanti
+                    context.DeadLetters.Enqueue(ex.MessageId);   // item error: park it and keep going
                     continue;
                 }
 
@@ -219,7 +221,7 @@ static async Task RunStageAsync<TIn, TOut>(string name, ChannelReader<TIn> input
         }
         catch (Exception ex)
         {
-            context.Fail(name, ex);   // errore dello stadio: cancella tutto, a monte resterebbero bloccati su un canale pieno
+            context.Fail(name, ex);   // stage error: cancel everything, upstream would block on a full channel forever
             throw;
         }
     })).ToArray();
@@ -227,21 +229,21 @@ static async Task RunStageAsync<TIn, TOut>(string name, ChannelReader<TIn> input
     try
     {
         await Task.WhenAll(workers);
-        output.TryComplete();                                     // solo quando TUTTI i worker hanno finito
+        output.TryComplete();                                     // only when ALL workers are done
     }
     catch (Exception ex)
     {
-        output.TryComplete(context.FirstError ?? ex);             // chi legge a valle vede la causa originale
+        output.TryComplete(context.FirstError ?? ex);             // downstream sees the root cause when it reads
     }
 }
 ```
 
-**Il completamento.** Lo stadio completa il suo output dopo `Task.WhenAll(workers)`, cioè quando tutti i worker sono usciti dal loro `await foreach`.
-Così il completamento scende lungo la pipeline un passo alla volta: il source completa il primo canale dopo l'ultimo messaggio; i worker di parse escono quando quel canale è vuoto e completato, e solo allora lo stadio completa il canale verso enrich; e così via fino all'ultimo canale, dove termina l'`await foreach` del chiamante.
-Completare un canale non butta via quello che contiene: chi legge riceve prima tutti gli elementi rimasti, poi la fine.
+**Completion.** The stage completes its output after `Task.WhenAll(workers)`, that is, when all the workers have exited their `await foreach`.
+This way completion flows down the pipeline one step at a time: the source completes the first channel after the last message; the parse workers exit when that channel is empty and completed, and only then does the stage complete the channel to enrich; and so on down to the last channel, where the caller's `await foreach` ends.
+Completing a channel doesn't throw away what it contains: the reader first receives all the remaining items, then the end.
 
-**Gli errori.** Un errore del singolo elemento (`PoisonMessageException`) non ferma lo stadio: il messaggio va in dead letter e il worker passa al successivo.
-Qualsiasi altra eccezione è un errore dello stadio, e passa da `context.Fail`:
+**Errors.** An error in a single item (`PoisonMessageException`) doesn't stop the stage: the message is dead-lettered and the worker moves on to the next one.
+Any other exception is a stage error, and goes through `context.Fail`:
 
 ```csharp
 public void Fail(string stage, Exception error)
@@ -257,10 +259,10 @@ public void Fail(string stage, Exception error)
 }
 ```
 
-**Cosa succede agli altri worker.** Il primo errore vero vince (`CompareExchange`) e cancella il token che tutti gli stadi passano a `ReadAllAsync`, `WriteAsync` e alla trasformazione.
-Gli altri worker, a monte e a valle, escono per la cancellazione: anche quelli bloccati su un canale pieno, che nel broken restavano lì per sempre.
-`Fail` ignora le `OperationCanceledException`, così la causa registrata resta la `ProviderException` e non la cancellazione che ne è la conseguenza.
-Ogni stadio, quando i suoi worker sono usciti, completa l'output con `context.FirstError`: l'errore viaggia a valle con il canale, e il chiamante riceve dal suo `await foreach` l'eccezione originale.
+**What happens to the other workers.** The first real error wins (`CompareExchange`) and cancels the token that every stage passes to `ReadAllAsync`, `WriteAsync` and the transform.
+The other workers, upstream and downstream, exit through cancellation: even those blocked on a full channel, which in the broken variant stayed there forever.
+`Fail` ignores `OperationCanceledException`, so the recorded cause remains the `ProviderException`, not the cancellation that follows from it.
+Once its workers have exited, each stage completes its output with `context.FirstError`: the error travels downstream with the channel, and the caller gets the original exception from its `await foreach`.
 
 ```text
 ── Scenario 1: a poison message, then a normal end of input
@@ -282,11 +284,11 @@ Ogni stadio, quando i suoi worker sono usciti, completa l'output con `context.Fi
   Exceptions nobody observed       0
 ```
 
-Nel primo scenario il #100 finisce in dead letter e gli altri 159 arrivano nel database, in un tempo simile a quello del broken.
-Nel secondo la pipeline fallisce in 25 ms invece di restare appesa, e il chiamante sa cosa è successo e in quale stadio.
-In entrambi nessun task resta in esecuzione e nessuna eccezione va persa: ogni worker è atteso dal suo stadio, e ogni stadio trasforma il proprio errore nel completamento del canale.
+In the first scenario #100 is dead-lettered and the other 159 reach the database, in about the same time as the broken variant.
+In the second, the pipeline fails in 25 ms instead of hanging, and the caller knows what happened and in which stage.
+In both, no task is left running and no exception is lost: every worker is awaited by its stage, and every stage turns its own error into the completion of its channel.
 
-**Le opzioni dei canali.** Prima degli scenari il programma stampa:
+**Channel options.** Before the scenarios, the program prints:
 
 ```text
 160 messages, poison message #100, 4 workers per stage, Bounded(20) between stages
@@ -303,20 +305,20 @@ static Channel<T> Bounded<T>() => Channel.CreateBounded<T>(new BoundedChannelOpt
 });
 ```
 
-Sono tutti valori di default, scritti per esteso perché sono decisioni.
-`SingleReader` e `SingleWriter = true` sono una promessa, al massimo un lettore (o uno scrittore) alla volta, in cambio della quale il canale può usare un'implementazione specializzata: con quattro worker per lato non si può fare.
-`AllowSynchronousContinuations = true` permette a chi scrive di eseguire direttamente, dentro la sua `WriteAsync` o `TryWrite`, la continuation del lettore in attesa, invece di accodarla.
-È la stessa trappola della `TaskCompletionSource` senza `RunContinuationsAsynchronously` in [Demo 1](../01-TaskCompletionSource) (scenario 1.1): il codice del consumer gira sul thread del producer, anche mentre quello tiene un lock.
-La demo lascia il default, `false`.
+These are all default values, spelled out because they're decisions.
+`SingleReader` and `SingleWriter = true` are a promise, at most one reader (or one writer) at a time, in exchange for which the channel can use a specialized implementation: with four workers on each side, that promise can't be kept.
+`AllowSynchronousContinuations = true` lets the writer run the waiting reader's continuation directly, inside its own `WriteAsync` or `TryWrite`, instead of queuing it.
+It's the same trap as a `TaskCompletionSource` without `RunContinuationsAsynchronously` in [Demo 1](../01-TaskCompletionSource/README.md) (scenario 1.1): the consumer's code runs on the producer's thread, even while the producer holds a lock.
+The demo keeps the default, `false`.
 
-In una pipeline il completamento è un protocollo, non una chiamata: il canale lo chiude chi possiede *tutti* i suoi scrittori, una volta sola.
-Gli errori viaggiano a valle con `Complete(ex)` e a monte con la cancellazione, e i worker non si lanciano fire-and-forget.
+In a pipeline, completion is a protocol, not a call: the channel is closed by whoever owns *all* of its writers, only once.
+Errors travel downstream with `Complete(ex)` and upstream with cancellation, and workers aren't started fire-and-forget.
 
-## 5.3 `when-each` — in ordine di arrivo, o di priorità
+## 5.3 `when-each` — in arrival order, or by priority
 
-Nessuna variante broken: lo scenario mostra due strumenti arrivati in .NET 9, da [WhenEachDemo.cs](WhenEachDemo.cs).
+No broken variant: the scenario shows two tools that arrived in .NET 9, from [WhenEachDemo.cs](WhenEachDemo.cs).
 
-**`Task.WhenEach`.** Cinque richieste di quotazione partono insieme, ognuna con la sua latenza: GOOG 50 ms, AAPL 100, AMZN 200, MSFT 300, NVDA 500.
+**`Task.WhenEach`.** Five quote requests start together, each with its own latency: GOOG 50 ms, AAPL 100, AMZN 200, MSFT 300, NVDA 500.
 
 ```csharp
 var quotes = await Task.WhenAll(StartQuotes());
@@ -348,15 +350,15 @@ await foreach (var task in Task.WhenEach(StartQuotes()))
    500 ms [t 17] NVDA 474.34
 ```
 
-Con `WhenAll` tutte le righe compaiono a 516 ms, nell'ordine delle richieste: la quotazione di GOOG, pronta dopo 50 ms, aspetta quella di NVDA.
-`Task.WhenEach` restituisce un `IAsyncEnumerable<Task<T>>` che produce i task man mano che completano, e ogni quotazione si mostra appena arriva.
-Produce il task, non il valore: `await task` prende il risultato, o solleva di nuovo l'eccezione di quella sola chiamata, e non sospende perché il task è già completato.
-Prima di .NET 9 lo stesso risultato richiedeva un ciclo che chiamava ripetutamente `Task.WhenAny` per prendere il prossimo task completato.
+With `WhenAll` every line appears at 516 ms, in request order: the GOOG quote, ready after 50 ms, waits for the NVDA one.
+`Task.WhenEach` returns an `IAsyncEnumerable<Task<T>>` that yields the tasks as they complete, and each quote shows up as soon as it arrives.
+It yields the task, not the value: `await task` gets the result, or rethrows the exception of that one call, and doesn't suspend because the task has already completed.
+Before .NET 9, the same result required a loop that called `Task.WhenAny` over and over to get the next completed task.
 
-**`Channel.CreateUnboundedPrioritized`.** Un consumer elabora un ordine ogni 60 ms; arrivano sei ordini normali e, dopo 150 ms, due urgenti.
+**`Channel.CreateUnboundedPrioritized`.** A consumer processes one order every 60 ms; six normal orders arrive and, after 150 ms, two urgent ones.
 
 ```csharp
-// Il comparer decide l'ordine: viene letto per primo l'elemento più piccolo.
+// The comparer decides the order: the smallest item is read first.
 var channel = Channel.CreateUnboundedPrioritized(new UnboundedPrioritizedChannelOptions<Order>
 {
     Comparer = Comparer<Order>.Create((a, b) => a.Priority != b.Priority
@@ -381,29 +383,29 @@ enum Priority { Urgent, Normal }
    451 ms [t  8] processing order #6 (Normal)
 ```
 
-Un canale prioritizzato non è FIFO: il prossimo elemento letto è il più piccolo secondo il comparer (`Comparer<T>.Default` se non ne passi uno).
-Qui `Urgent` vale 0 e `Normal` 1, e a parità di priorità decide l'Id: gli ordini normali restano nell'ordine d'arrivo.
-I due urgenti, accodati a 169 ms, passano davanti a #4, #5 e #6, che erano in coda da prima.
-L'ordine già in lavorazione (#3) non viene interrotto: la priorità decide solo quale elemento si legge dopo.
-Il canale è unbounded: come in 5.1, nessuno frena il producer.
+A prioritized channel isn't FIFO: the next item read is the smallest according to the comparer (`Comparer<T>.Default` if you don't pass one).
+Here `Urgent` is 0 and `Normal` is 1, and for equal priority the Id decides: normal orders stay in arrival order.
+The two urgent ones, queued at 169 ms, jump ahead of #4, #5 and #6, which had been queued earlier.
+The order already being processed (#3) isn't interrupted: priority only decides which item is read next.
+The channel is unbounded: as in 5.1, nothing holds back the producer.
 
-`WhenEach` serve quando hai N task e vuoi agire su ciascun risultato appena è pronto; il canale prioritizzato quando il consumer deve scegliere per importanza e non per ordine di arrivo.
+`WhenEach` is for when you have N tasks and want to act on each result as soon as it's ready; the prioritized channel is for when the consumer must pick by importance rather than by arrival order.
 
-## Cosa sapere
+## What to know
 
-- **Bounded per default.** Con `CreateUnbounded`, e con `CreateUnboundedPrioritized`, nessuno frena il producer: se è più veloce del consumer, la differenza diventa memoria e latenza, senza limite (5.1).
-- **Il `FullMode` lo sceglie il dato.** `Wait`, il default, quando niente può andare perso: il producer rallenta e il problema passa a monte. `DropOldest` quando conta solo il valore più recente. Esistono anche `DropNewest` (scarta l'elemento più recente nel canale) e `DropWrite` (scarta quello che si sta scrivendo).
-- **Con le modalità drop passa `itemDropped`.** È l'unico modo per contare, loggare o fare dispose di quello che il canale butta via.
-- **Il writer si completa una volta, quando hanno finito tutti.** Con più worker sullo stesso canale il completamento non spetta a un worker ma a chi li attende tutti (`Task.WhenAll`, poi `TryComplete`). `Complete` su un canale già completato solleva un'eccezione, `TryComplete` restituisce `false`.
-- **Gli errori viaggiano nei due sensi.** A valle con `TryComplete(ex)`: l'`await foreach` di chi legge termina con quell'eccezione. A monte con un token di cancellazione condiviso: senza, chi scrive su un canale pieno che nessuno legge più resta bloccato per sempre. A chi chiama arriva l'errore originale, non la cancellazione che ne è la conseguenza.
-- **Errore dell'elemento ≠ errore dello stadio.** Un messaggio malformato va in dead letter e la pipeline prosegue; un provider giù ferma tutto.
-- **Niente worker fire-and-forget.** Un `Task` fallito che nessuno attende si scopre solo quando il GC lo finalizza.
-- **Le opzioni sono promesse.** `SingleReader`/`SingleWriter = true` solo con un solo lettore o scrittore alla volta; `AllowSynchronousContinuations` resta `false` a meno di sapere esattamente dove gireranno le continuation.
-- Lo stesso canale bounded con `DropOldest` torna in [Demo 6](../06-RxInterop) come confine esplicito tra uno stream Rx e un consumer async.
+- **Default to bounded.** With `CreateUnbounded`, and with `CreateUnboundedPrioritized`, nothing holds back the producer: if it's faster than the consumer, the difference becomes memory and latency, without limit (5.1).
+- **The data picks the `FullMode`.** `Wait`, the default, when nothing may be lost: the producer slows down and the problem moves upstream. `DropOldest` when only the latest value matters. There are also `DropNewest` (drops the newest item in the channel) and `DropWrite` (drops the item being written).
+- **With the drop modes, pass `itemDropped`.** It's the only way to count, log or dispose of what the channel throws away.
+- **The writer is completed once, when everyone is done.** With several workers on the same channel, completion isn't up to a worker but to whoever awaits them all (`Task.WhenAll`, then `TryComplete`). `Complete` on an already completed channel throws, `TryComplete` returns `false`.
+- **Errors travel both ways.** Downstream with `TryComplete(ex)`: the reader's `await foreach` ends with that exception. Upstream with a shared cancellation token: without one, a writer on a full channel that nobody reads anymore stays blocked forever. The caller gets the original error, not the cancellation that follows from it.
+- **Item error ≠ stage error.** A malformed message is dead-lettered and the pipeline carries on; a provider outage stops everything.
+- **No fire-and-forget workers.** A faulted `Task` that nobody awaits is only discovered when the GC finalizes it.
+- **Options are promises.** `SingleReader`/`SingleWriter = true` only with a single reader or writer at a time; `AllowSynchronousContinuations` stays `false` unless you know exactly where the continuations will run.
+- The same bounded channel with `DropOldest` comes back in [Demo 6](../06-RxInterop/README.md) as the explicit boundary between an Rx stream and an async consumer.
 
-## Riferimenti
+## References
 
-- [Channels — documentazione .NET](https://learn.microsoft.com/dotnet/core/extensions/channels)
+- [Channels — .NET documentation](https://learn.microsoft.com/dotnet/core/extensions/channels)
 - [Stephen Toub — An Introduction to System.Threading.Channels](https://devblogs.microsoft.com/dotnet/an-introduction-to-system-threading-channels/)
 - [Task.WhenEach — API](https://learn.microsoft.com/dotnet/api/system.threading.tasks.task.wheneach)
 - [Channel.CreateUnboundedPrioritized — API](https://learn.microsoft.com/dotnet/api/system.threading.channels.channel.createunboundedprioritized)

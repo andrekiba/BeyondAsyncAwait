@@ -1,38 +1,40 @@
-# Demo 4 — Contesto e ciclo di vita: AsyncLocal e IAsyncDisposable
+# Demo 4 — Context and lifetime: AsyncLocal and IAsyncDisposable
 
-Il codice async non porta con sé solo i parametri: porta anche un **contesto**.
-Ogni flusso logico ha un `ExecutionContext`, e gli `AsyncLocal<T>` vivono lì dentro: è così che tenant e correlation id seguono una richiesta attraverso `await`, thread pool e continuation senza passare da nessuna firma.
-La regola si enuncia in una riga e si sbaglia facilmente: il contesto scende verso il lavoro che avvii, non risale verso chi ti ha chiamato, e resta attaccato a tutto ciò che lo ha catturato, anche quando la richiesta è finita da un pezzo.
+**English** · [Italiano](README-it.md)
 
-L'altra metà della Demo riguarda le risorse con un ciclo di vita async.
-Un oggetto che per chiudersi deve fare I/O implementa `IAsyncDisposable`, e chi lo possiede deve disporlo in modo async e aspettare che abbia davvero finito.
+Async code doesn't carry only its parameters: it also carries a **context**.
+Every logical flow has an `ExecutionContext`, and `AsyncLocal<T>` values live inside it: that's how a tenant and a correlation id follow a request across `await`s, the thread pool and continuations without appearing in any signature.
+The rule fits in one line and is easy to get wrong: context flows down into the work you start, never back up to whoever called you, and it stays attached to everything that captured it, even long after the request has ended.
 
-In QuoteHub sono tre situazioni quotidiane: richieste multi-tenant che tengono il tenant in un `AsyncLocal`, un singleton che rinfresca i prezzi in background, un publisher che manda le quotazioni al bus a blocchi e deve svuotare il buffer allo shutdown.
-Sono bug che i test difficilmente vedono: dentro il metodo il valore c'è, i log hanno un tenant (quello sbagliato), lo shutdown può terminare senza errori e perdere comunque l'ultimo batch.
+The other half of the Demo is about resources with an async lifetime.
+An object that has to do I/O to close implements `IAsyncDisposable`, and whoever owns it must dispose it asynchronously and wait until it has really finished.
 
-## Come si lancia
+In QuoteHub these are three everyday situations: multi-tenant requests that keep the tenant in an `AsyncLocal`, a singleton that refreshes prices in the background, and a publisher that sends quotes to the bus in batches and must drain its buffer on shutdown.
+These are bugs that tests rarely catch: inside the method the value is there, the logs do have a tenant (the wrong one), and shutdown can complete without errors and still lose the last batch.
+
+## How to run
 
 ```bash
-dotnet run --project demos/04-AsyncContext -- 4.1                    # broken, Invio, fixed
+dotnet run --project demos/04-AsyncContext -- 4.1                    # broken, Enter, fixed
 dotnet run --project demos/04-AsyncContext -- context-leak --fixed
-dotnet run --project demos/04-AsyncContext -- all --no-pause         # tutti gli scenari, entrambe le varianti
+dotnet run --project demos/04-AsyncContext -- all --no-pause         # all scenarios, both variants
 ```
 
-Da IDE ci sono i profili `menu`, `4.1 asynclocal-flow`, `4.2 context-leak` e `4.3 async-dispose`; da terminale lo stesso profilo si sceglie con `--launch-profile "4.1 asynclocal-flow"`.
+In the IDE there are the `menu`, `4.1 asynclocal-flow`, `4.2 context-leak` and `4.3 async-dispose` profiles; from the terminal you pick the same profile with `--launch-profile "4.1 asynclocal-flow"`.
 
-**Runtime Async on/off.** Come tutto il repo, la Demo compila con Runtime Async attivo ([Directory.Build.targets](../../Directory.Build.targets)). Per le state machine del compilatore:
+**Runtime Async on/off.** Like the rest of the repo, the Demo builds with Runtime Async enabled ([Directory.Build.targets](../../Directory.Build.targets)). For the compiler's state machines:
 
 ```bash
 dotnet run --project demos/04-AsyncContext -p:RuntimeAsync=false -- 4.1
 ```
 
-Lo scenario 4.1 stampa nel banner il modello con cui è compilato l'assembly: `runtime async, .NET 11.0.0` oppure `compiler state machines, .NET 11.0.0`.
-Gli output qui sotto vengono da .NET 11.0.0 in Debug. A parte il banner e i millisecondi, l'output dei tre scenari è identico nei due modelli: Runtime Async cambia come viene eseguito un metodo async, non come fluisce il contesto.
+Scenario 4.1 prints in its banner the model the assembly was compiled with: `runtime async, .NET 11.0.0` or `compiler state machines, .NET 11.0.0`.
+The output below comes from .NET 11.0.0 in Debug. Apart from the banner and the milliseconds, the output of all three scenarios is identical under both models: Runtime Async changes how an async method is executed, not how context flows.
 
-## ★ 4.1 `asynclocal-flow` — il valore non torna al chiamante
+## ★ 4.1 `asynclocal-flow` — the value doesn't flow back to the caller
 
-Il tenant della richiesta sta in un `AsyncLocal<string?>` ([AsyncLocalFlowDemo.cs](AsyncLocalFlowDemo.cs)).
-La variante broken lo imposta dentro un metodo async in due modi: dopo un `await`, come farebbe un lookup, e prima di qualunque `await`.
+The request's tenant lives in an `AsyncLocal<string?>` ([AsyncLocalFlowDemo.cs](AsyncLocalFlowDemo.cs)).
+The broken variant sets it inside an async method in two ways: after an `await`, as a lookup would, and before any `await`.
 
 ```csharp
 static readonly AsyncLocal<string?> Tenant = new();
@@ -41,7 +43,7 @@ static readonly AsyncLocal<string?> Tenant = new();
 
 static async Task SetTenantAsync(string tenant)
 {
-    await Task.Delay(10); // per esempio un lookup
+    await Task.Delay(10); // e.g. a lookup
     Tenant.Value = tenant;
     Out.Log($"inside SetTenantAsync: tenant = {Tenant.Value}");
 }
@@ -54,7 +56,7 @@ static async Task SetTenantBeforeAnyAwaitAsync(string tenant)
 }
 ```
 
-Il chiamante azzera il valore, chiama il metodo e lo rilegge:
+The caller clears the value, calls the method and reads it back:
 
 ```csharp
 Tenant.Value = null;
@@ -70,13 +72,13 @@ runtime async, .NET 11.0.0
   set before its first await       (null)
 ```
 
-Dentro il metodo il valore c'è, al chiamante arriva `(null)`.
-Anche nel secondo caso, dove l'assegnazione avviene nella parte sincrona del metodo, prima che sospenda.
+Inside the method the value is there; the caller gets `(null)`.
+Even in the second case, where the assignment happens in the synchronous part of the method, before it suspends.
 
-**Perché.** Un metodo async lavora su una copia del contesto (copy-on-write): quello che imposta vale per il metodo stesso e per il lavoro che avvia da lì in poi, e sparisce quando il controllo torna al chiamante.
-Con le state machine lo garantisce il builder: `AsyncTaskMethodBuilder.Start` salva l'`ExecutionContext` corrente, esegue la parte sincrona del metodo e poi lo ripristina, proprio per evitare che i dati ambientali escano dal metodo verso il chiamante.
-Per questo conta anche l'assegnazione fatta prima del primo `await`.
-Con Runtime Async il metodo non passa più da `Start` (vedi [Demo 0](../00-RuntimeAsync)), ma la semantica è la stessa, riga per riga:
+**Why.** An async method works on a copy of the context (copy-on-write): whatever it sets applies to the method itself and to the work it starts from that point on, and is gone when control returns to the caller.
+With state machines the builder guarantees this: `AsyncTaskMethodBuilder.Start` saves the current `ExecutionContext`, runs the synchronous part of the method and then restores it, precisely to keep ambient data from leaking out of the method into the caller.
+That's why the assignment made before the first `await` counts too.
+With Runtime Async the method no longer goes through `Start` (see [Demo 0](../00-RuntimeAsync/README.md)), but the semantics are the same, line for line:
 
 ```text
 compiler state machines, .NET 11.0.0
@@ -86,26 +88,26 @@ compiler state machines, .NET 11.0.0
   set before its first await       (null)
 ```
 
-Un metodo sincrono invece non ha questo confine: scrive direttamente nel contesto di chi lo chiama.
+A synchronous method, on the other hand, has no such boundary: it writes directly into its caller's context.
 
-**Fixed.** Tre modi, a seconda di chi deve conoscere il valore.
+**Fixed.** Three ways, depending on who needs to know the value.
 
-Un setter sincrono, che non apre una copia del contesto:
+A synchronous setter, which doesn't open a copy of the context:
 
 ```csharp
 static void SetTenant(string tenant) => Tenant.Value = tenant;
 ```
 
-Il metodo async restituisce il valore e lo assegna il chiamante, nel proprio contesto:
+The async method returns the value and the caller assigns it, in its own context:
 
 ```csharp
 Tenant.Value = await LookupTenantAsync("acme");
 ```
 
-Oppure un holder mutabile: l'`AsyncLocal` viene impostato una volta sola, all'inizio della richiesta, e il codice async muta l'oggetto invece di sostituire il valore.
+Or a mutable holder: the `AsyncLocal` is set only once, at the start of the request, and async code mutates the object instead of replacing the value.
 
 ```csharp
-Holder.Value = new TenantHolder(); // impostato una volta, all'inizio della richiesta
+Holder.Value = new TenantHolder(); // set once, at the start of the request
 await ResolveIntoHolderAsync("acme");
 
 // …
@@ -113,7 +115,7 @@ await ResolveIntoHolderAsync("acme");
 static async Task ResolveIntoHolderAsync(string tenant)
 {
     await Task.Delay(10);
-    Holder.Value!.Name = tenant; // muta l'oggetto condiviso, non sostituisce il valore dell'AsyncLocal
+    Holder.Value!.Name = tenant; // mutate the shared object, don't replace the AsyncLocal value
 }
 ```
 
@@ -124,16 +126,16 @@ runtime async, .NET 11.0.0
   holder mutated by async code     acme
 ```
 
-Il terzo funziona perché ogni copia del contesto punta alla stessa istanza dell'holder: la mutazione è visibile a tutte.
-È per la stessa ragione che `IHttpContextAccessor` tiene nel suo `AsyncLocal` un holder mutabile.
-Il rovescio: quell'istanza la vede anche tutto il lavoro avviato dalla richiesta, compreso quello che le sopravvive (vedi 4.2).
+The third one works because every copy of the context points to the same holder instance: the mutation is visible to all of them.
+It's for the same reason that `IHttpContextAccessor` keeps a mutable holder in its `AsyncLocal`.
+The flip side: that instance is also visible to all the work the request starts, including work that outlives it (see 4.2).
 
-Il messaggio: `AsyncLocal` scende, non risale. Se un metodo async deve produrre contesto per il chiamante, lo restituisce; altrimenti il contesto si stabilisce prima, al punto d'ingresso del flusso.
+The takeaway: `AsyncLocal` flows down, never back up. If an async method has to produce context for its caller, it returns it; otherwise the context is established up front, at the entry point of the flow.
 
-## ★ 4.2 `context-leak` — il background si tiene il tenant della prima richiesta
+## ★ 4.2 `context-leak` — the background keeps the first request's tenant
 
-`PriceRefresher` ([ContextLeakDemo.cs](ContextLeakDemo.cs)) è un singleton con un loop che rinfresca la cache dei prezzi ogni 150 ms.
-Parte in modo lazy, dentro la prima richiesta che ne ha bisogno: `EnsureStarted` avvia il loop e registra sul token di shutdown un callback che svuota le sottoscrizioni.
+`PriceRefresher` ([ContextLeakDemo.cs](ContextLeakDemo.cs)) is a singleton with a loop that refreshes the price cache every 150 ms.
+It starts lazily, inside the first request that needs it: `EnsureStarted` starts the loop and registers a callback on the shutdown token that flushes the subscriptions.
 
 ```csharp
 static async Task RequestAsync(string tenant, PriceRefresher refresher, CancellationToken shutdown)
@@ -157,9 +159,9 @@ async Task LoopAsync()
 }
 ```
 
-Tre richieste, tre tenant: `acme` sveglia il singleton, poi `globex` e `initech` in parallelo.
-`Background` legge `Tenant.Value` e conta le righe scritte con un tenant: nel lavoro di background non dovrebbe essercene nessuno.
-Nella variante broken `EnsureStarted` fa quello che verrebbe naturale:
+Three requests, three tenants: `acme` wakes the singleton up, then `globex` and `initech` in parallel.
+`Background` reads `Tenant.Value` and counts the lines written with a tenant: background work shouldn't have any.
+In the broken variant `EnsureStarted` does what comes naturally:
 
 ```csharp
 loop = Task.Run(LoopAsync);
@@ -178,32 +180,32 @@ shutdown.Register(() => Background("flushing subscriptions on shutdown"));
   Background lines tagged 'acme'   4/4
 ```
 
-Le richieste vedono ciascuna il proprio tenant, anche le due concorrenti: ognuna lavora sulla sua copia del contesto, come in 4.1.
-Il background invece è `acme` per sempre.
+Each request sees its own tenant, even the two concurrent ones: each one works on its own copy of the context, as in 4.1.
+The background, however, is `acme` forever.
 
-**Perché.** `Task.Run` cattura l'`ExecutionContext` corrente, quello della richiesta di `acme`, e ci esegue il delegate.
-Il loop vive in quel contesto finché l'applicazione non si ferma, e ogni `await` dentro il loop riprende nello stesso contesto.
-`CancellationToken.Register` fa lo stesso: cattura il contesto al momento della registrazione e lo usa per il callback, che parte allo shutdown e con `acme` non ha niente a che fare.
-Il risultato sono log sbagliati, metriche attribuite al tenant sbagliato e il contesto di quella richiesta tenuto in vita quanto il loop, con tutto ciò a cui puntano i suoi `AsyncLocal`.
-E quale tenant "vince" dipende da quale richiesta arriva per prima dopo l'avvio.
+**Why.** `Task.Run` captures the current `ExecutionContext`, the one from `acme`'s request, and runs the delegate in it.
+The loop lives in that context until the application stops, and every `await` inside the loop resumes in the same context.
+`CancellationToken.Register` does the same: it captures the context at registration time and uses it for the callback, which runs at shutdown and has nothing to do with `acme`.
+The result is wrong logs, metrics attributed to the wrong tenant, and that request's context kept alive as long as the loop, along with everything its `AsyncLocal`s point to.
+And which tenant "wins" depends on which request arrives first after startup.
 
-Vale lo stesso per un `Timer` creato dentro una richiesta.
-In generale catturano il contesto quasi tutte le API che avviano lavoro asincrono, `ThreadPool.QueueUserWorkItem` compreso; fanno eccezione quelle con prefisso `Unsafe`, che per costruzione non lo fanno fluire.
+The same goes for a `Timer` created inside a request.
+In general, almost every API that starts asynchronous work captures the context, `ThreadPool.QueueUserWorkItem` included; the exceptions are the ones with the `Unsafe` prefix, which by design don't flow it.
 
-**Fixed.** Il lavoro che sopravvive alla richiesta parte senza il suo contesto.
+**Fixed.** Work that outlives the request starts without the request's context.
 
 ```csharp
 if (suppressFlow)
 {
-    // Niente della richiesta corrente deve fluire nel lavoro che le sopravvive.
+    // Nothing of the current request flows into work that outlives it.
     using (ExecutionContext.SuppressFlow())
         loop = Task.Run(LoopAsync);
     shutdown.UnsafeRegister(_ => Background("flushing subscriptions on shutdown"), null);
 }
 ```
 
-- `Task.Run` non ha una variante `Unsafe`: si sospende il flusso intorno alla chiamata. `ExecutionContext.SuppressFlow()` restituisce un `AsyncFlowControl`, e il `using` ripristina il flusso appena il task è partito.
-- Per il token esiste `CancellationToken.UnsafeRegister`, che non cattura l'`ExecutionContext` e non lo fa fluire nel callback.
+- `Task.Run` has no `Unsafe` variant: you suppress the flow around the call. `ExecutionContext.SuppressFlow()` returns an `AsyncFlowControl`, and the `using` restores the flow as soon as the task has started.
+- For the token there's `CancellationToken.UnsafeRegister`, which doesn't capture the `ExecutionContext` and doesn't flow it into the callback.
 
 ```text
     61 ms [t  7] [tenant=acme] request: served quotes
@@ -217,15 +219,15 @@ if (suppressFlow)
   Background lines tagged 'acme'   0/4
 ```
 
-Il loop parte senza il contesto della richiesta: se gliene serve uno suo, lo stabilisce esplicitamente.
+The loop starts without the request's context: if it needs a context of its own, it establishes one explicitly.
 
-Il messaggio: tutto ciò che vive più a lungo della richiesta (loop, timer, callback di shutdown, cache condivise) non deve nascere nel suo contesto.
-Lo stesso problema, con una cache condivisa invece di un loop, è lo scenario 2.4 di [Demo 2](../02-AsyncCaching): la factory dell'`AsyncLazy` gira nel contesto del primo chiamante, e anche lì il fix è `SuppressFlow`.
+The takeaway: anything that lives longer than the request (loops, timers, shutdown callbacks, shared caches) must not be born in its context.
+The same problem, with a shared cache instead of a loop, is scenario 2.4 in [Demo 2](../02-AsyncCaching/README.md): the `AsyncLazy` factory runs in the first caller's context, and there too the fix is `SuppressFlow`.
 
-## 4.3 `async-dispose` — lo shutdown che perde l'ultimo batch
+## 4.3 `async-dispose` — the shutdown that loses the last batch
 
-[BatchingPublisher.cs](BatchingPublisher.cs) pubblica le quotazioni verso valle a blocchi di 10: un `Channel` in ingresso e un loop che accumula e fa flush.
-Quello che resta nel buffer va scritto allo shutdown, e scrivere è I/O: il tipo implementa solo `IAsyncDisposable`.
+[BatchingPublisher.cs](BatchingPublisher.cs) publishes quotes downstream in batches of 10: a `Channel` for input and a loop that accumulates and flushes.
+Whatever is left in the buffer has to be written on shutdown, and writing is I/O: the type implements only `IAsyncDisposable`.
 
 ```csharp
 async Task LoopAsync()
@@ -238,16 +240,16 @@ async Task LoopAsync()
             await FlushAsync(batch);
     }
 
-    // Input completato: flush del resto.
+    // Input completed: flush the remainder.
     if (batch.Count > 0)
         await FlushAsync(batch);
 }
 ```
 
-In [AsyncDisposeDemo.cs](AsyncDisposeDemo.cs) il publisher è un servizio scoped. La richiesta pubblica 25 quotazioni e prosegue per altri 300 ms, durante i quali partono i due batch pieni; poi lo scope viene chiuso.
-Gli ultimi 5 dipendono interamente dal dispose. La variante broken li perde in due modi.
+In [AsyncDisposeDemo.cs](AsyncDisposeDemo.cs) the publisher is a scoped service. The request publishes 25 quotes and keeps going for another 300 ms, during which the two full batches are flushed; then the scope is disposed.
+The last 5 depend entirely on the dispose. The broken variant loses them in two ways.
 
-**Dispose sincrono dello scope.**
+**Synchronous dispose of the scope.**
 
 ```csharp
 using var scope = services.CreateScope();
@@ -265,11 +267,11 @@ await HandleRequestAsync(publisher);
   Published at shutdown            20/25
 ```
 
-Il `Dispose()` dello scope trova un servizio che implementa solo `IAsyncDisposable` e solleva `InvalidOperationException`.
-Il `DisposeAsync` del publisher non parte mai: nell'output non c'è né il batch da 5 né la riga `publisher: disposed`, e gli ultimi 5 restano nel buffer.
-È il rischio che la documentazione segnala per i tipi solo `IAsyncDisposable`: se il consumer chiama solo `Dispose`, `DisposeAsync` non viene mai chiamato.
+The scope's `Dispose()` finds a service that implements only `IAsyncDisposable` and throws `InvalidOperationException`.
+The publisher's `DisposeAsync` never runs: the output has neither the batch of 5 nor the `publisher: disposed` line, and the last 5 stay in the buffer.
+This is the risk the documentation points out for `IAsyncDisposable`-only types: if the consumer calls only `Dispose`, `DisposeAsync` is never called.
 
-**Un `DisposeAsync` che non aspetta il flush.** Lo scope ora è async, ma il publisher chiude l'input e torna subito:
+**A `DisposeAsync` that doesn't wait for the flush.** The scope is async now, but the publisher closes the input and returns right away:
 
 ```csharp
 input.Writer.TryComplete();
@@ -288,11 +290,11 @@ if (!waitForFlush)
 ! 25/25 only after DisposeAsync returned: in a real shutdown the process is already gone
 ```
 
-`TryComplete` chiude l'input, il loop esce dal `foreach` e avvia l'ultimo flush, ma `DisposeAsync` è già tornato.
-Scope, container e chi gestisce lo shutdown considerano il publisher chiuso mentre l'ultimo batch è ancora in volo: arriva a 700 ms, dopo che il chiamante ha letto 20/25.
-La demo aspetta 150 ms apposta per mostrarlo; un processo in chiusura non aspetta.
+`TryComplete` closes the input, the loop leaves the `foreach` and starts the last flush, but `DisposeAsync` has already returned.
+The scope, the container and whatever drives the shutdown all consider the publisher closed while the last batch is still in flight: it lands at 700 ms, after the caller has read 20/25.
+The demo waits 150 ms on purpose to show it; a process that is shutting down doesn't wait.
 
-**Fixed.** Scope async per tutta la catena, e un `DisposeAsync` che torna solo a lavoro finito.
+**Fixed.** An async scope all the way through the chain, and a `DisposeAsync` that returns only once the work is done.
 
 ```csharp
 await using (var services = BuildServices(waitForFlush: true))
@@ -303,13 +305,13 @@ await using (var services = BuildServices(waitForFlush: true))
 }
 
 Out.Metric("Published at shutdown", $"{publisher.Published}/{Quotes}", publisher.Published == Quotes);
-await publisher.DisposeAsync(); // un secondo dispose deve essere innocuo
+await publisher.DisposeAsync(); // a second dispose must be harmless
 ```
 
 ```csharp
 public async ValueTask DisposeAsync()
 {
-    // Idempotente: container DI, blocchi using e hook di shutdown possono chiamarlo tutti.
+    // Idempotent: DI containers, using blocks and shutdown hooks may all call it.
     if (Interlocked.Exchange(ref disposed, 1) == 1)
     {
         Out.Log("publisher: already disposed, nothing to do");
@@ -319,7 +321,7 @@ public async ValueTask DisposeAsync()
     input.Writer.TryComplete();
     // …
 
-    // Aspetta l'ultimo flush; un flush fallito viene loggato, non deve uscire da DisposeAsync come eccezione.
+    // Wait for the last flush; a failed flush is logged, it must not throw out of DisposeAsync.
     await loop.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
     if (loop.IsFaulted)
         Out.Bad($"publisher: last flush failed: {loop.Exception!.InnerException!.Message}");
@@ -338,27 +340,27 @@ public async ValueTask DisposeAsync()
    373 ms [t  8] publisher: already disposed, nothing to do
 ```
 
-- `CreateAsyncScope` con `await using`: lo scope viene disposto con `DisposeAsync`, che arriva fino al publisher. Anche il `ServiceProvider` è in un `await using`.
-- `DisposeAsync` completa l'input e poi **aspetta il loop**: l'ultimo flush e `disposed, buffer flushed` cadono nello stesso millisecondo, prima che il chiamante legga 25/25.
-- `ConfigureAwaitOptions.SuppressThrowing`: un flush fallito non esce da `DisposeAsync` come eccezione; il codice controlla `loop.IsFaulted` e lo logga.
-- Idempotente: il secondo `DisposeAsync` trova il flag già impostato da `Interlocked.Exchange` e non fa nulla.
+- `CreateAsyncScope` with `await using`: the scope is disposed with `DisposeAsync`, which reaches all the way to the publisher. The `ServiceProvider` is in an `await using` too.
+- `DisposeAsync` completes the input and then **waits for the loop**: the last flush and `disposed, buffer flushed` land in the same millisecond, before the caller reads 25/25.
+- `ConfigureAwaitOptions.SuppressThrowing`: a failed flush doesn't escape `DisposeAsync` as an exception; the code checks `loop.IsFaulted` and logs it.
+- Idempotent: the second `DisposeAsync` finds the flag already set by `Interlocked.Exchange` and does nothing.
 
-Il messaggio: una risorsa che si chiude in modo async vuole proprietari async per tutta la catena (`await using`, `CreateAsyncScope`, il container disposto con `DisposeAsync`) e un `DisposeAsync` che torni solo quando il lavoro che chiude è davvero finito.
-Implementare solo `IAsyncDisposable` è legittimo quando una chiusura sincrona non è possibile, e qui ha anche un effetto utile: il dispose sincrono il batch lo perde comunque, ma con un'eccezione, non in silenzio.
+The takeaway: a resource that closes asynchronously needs async owners all the way through the chain (`await using`, `CreateAsyncScope`, the container disposed with `DisposeAsync`) and a `DisposeAsync` that returns only when the work it shuts down has really finished.
+Implementing only `IAsyncDisposable` is legitimate when a synchronous close isn't possible, and here it also has a useful side effect: the synchronous dispose still loses the batch, but with an exception rather than silently.
 
-## Cosa sapere
+## What to know
 
-- **`AsyncLocal` scende, non risale.** Un metodo async che deve produrre contesto lo restituisce. Il contesto si imposta al punto d'ingresso del flusso, in codice sincrono o prima di chiamare il metodo async.
-- **Un holder mutabile** si imposta una volta, all'inizio del flusso. Ogni copia del contesto vede la stessa istanza, compreso il lavoro avviato dalla richiesta.
-- **Catturano il contesto** `Task.Run`, `ThreadPool.QueueUserWorkItem`, `Timer`, `CancellationToken.Register`, e ogni `await` lo fa fluire alla continuation. Per il lavoro che sopravvive alla richiesta: `ExecutionContext.SuppressFlow()` intorno all'avvio, oppure le varianti `Unsafe*` (`CancellationToken.UnsafeRegister`, `ThreadPool.UnsafeQueueUserWorkItem`).
-- **`ConfigureAwait(false)` non c'entra**: riguarda il `SynchronizationContext`, non l'`ExecutionContext`. Non esiste un modo, a livello di `await`, per non far fluire l'`ExecutionContext`.
-- **Un tipo solo `IAsyncDisposable`** richiede che tutti i suoi proprietari siano async: `await using`, `CreateAsyncScope()`, il `ServiceProvider` disposto con `DisposeAsync`.
-- **`DisposeAsync`** deve essere idempotente, aspettare il lavoro che chiude e non sollevare eccezioni per un flush fallito.
-- **Runtime Async non cambia nulla di tutto questo**: i tre scenari danno lo stesso output con `-p:RuntimeAsync=false`.
+- **`AsyncLocal` flows down, never back up.** An async method that has to produce context returns it. Context is set at the entry point of the flow, in synchronous code or before calling the async method.
+- **A mutable holder** is set once, at the start of the flow. Every copy of the context sees the same instance, including the work the request starts.
+- **Context is captured by** `Task.Run`, `ThreadPool.QueueUserWorkItem`, `Timer`, `CancellationToken.Register`, and every `await` flows it to the continuation. For work that outlives the request: `ExecutionContext.SuppressFlow()` around the start, or the `Unsafe*` variants (`CancellationToken.UnsafeRegister`, `ThreadPool.UnsafeQueueUserWorkItem`).
+- **`ConfigureAwait(false)` has nothing to do with it**: it concerns the `SynchronizationContext`, not the `ExecutionContext`. There is no way, at the `await` level, to keep the `ExecutionContext` from flowing.
+- **An `IAsyncDisposable`-only type** requires all of its owners to be async: `await using`, `CreateAsyncScope()`, the `ServiceProvider` disposed with `DisposeAsync`.
+- **`DisposeAsync`** must be idempotent, wait for the work it shuts down, and not throw for a failed flush.
+- **Runtime Async changes none of this**: all three scenarios produce the same output with `-p:RuntimeAsync=false`.
 
-## Riferimenti
+## References
 
 - [Stephen Toub — ExecutionContext vs SynchronizationContext](https://devblogs.microsoft.com/dotnet/executioncontext-vs-synchronizationcontext/)
-- [Stephen Toub — How Async/Await Really Works in C#](https://devblogs.microsoft.com/dotnet/how-async-await-really-works/) (il salvataggio e ripristino dell'`ExecutionContext` in `Start`)
+- [Stephen Toub — How Async/Await Really Works in C#](https://devblogs.microsoft.com/dotnet/how-async-await-really-works/) (saving and restoring the `ExecutionContext` in `Start`)
 - [`AsyncLocal<T>` Class](https://learn.microsoft.com/dotnet/api/system.threading.asynclocal-1)
 - [Implement a DisposeAsync method](https://learn.microsoft.com/dotnet/standard/garbage-collection/implementing-disposeasync)

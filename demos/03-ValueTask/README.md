@@ -1,37 +1,39 @@
 # Demo 3 — Hot path: ValueTask
 
-Nel gateway QuoteHub i prezzi stanno in una cache davanti al provider lento.
-Quando il prezzo c'è, il metodo async ritorna senza mai sospendere: è il hot path, la chiamata che il gateway ripete di continuo.
-Con le state machine del compilatore anche questo ritorno sincrono ha un costo: un `async Task<decimal>` deve consegnare il risultato dentro un `Task`, e per un prezzo ne alloca uno nuovo a ogni chiamata.
-`ValueTask<T>` esiste per questo: è una struct che contiene il risultato quando è già pronto, e un `Task<T>` o una `IValueTaskSource<T>` quando non lo è.
+**English** · [Italiano](README-it.md)
 
-Runtime Async ([Demo 0](../00-RuntimeAsync)) cambia il consiglio classico.
-Un `Task<T>` awaitato direttamente non viene materializzato, quindi il cache hit costa 0 byte anche senza `ValueTask`.
-L'allocazione torna appena il `Task` diventa un oggetto: passa da un delegate, finisce in un campo, entra in un `WhenAll`.
-Lo scenario 3.1 misura i due modelli a confronto. Il 3.2 mostra dove `ValueTask` resta decisivo, le sorgenti riusabili (`IValueTaskSource`), e la regola che impone: un `ValueTask` si consuma una volta sola.
+In the QuoteHub gateway, prices sit in a cache in front of the slow provider.
+When the price is there, the async method returns without ever suspending: this is the hot path, the call the gateway makes over and over.
+With compiler state machines even this synchronous return has a cost: an `async Task<decimal>` has to hand back its result inside a `Task`, and for a price it allocates a new one on every call.
+That is what `ValueTask<T>` is for: a struct that holds the result when it is already available, and a `Task<T>` or an `IValueTaskSource<T>` when it is not.
 
-## Come si lancia
+Runtime Async ([Demo 0](../00-RuntimeAsync/README.md)) changes the classic advice.
+A `Task<T>` that is awaited directly is never materialized, so a cache hit costs 0 bytes even without `ValueTask`.
+The allocation comes back as soon as the `Task` becomes an object: it goes through a delegate, ends up in a field, is passed to `WhenAll`.
+Scenario 3.1 measures the two models side by side. Scenario 3.2 shows where `ValueTask` is still decisive, reusable sources (`IValueTaskSource`), and the rule that comes with it: a `ValueTask` can be consumed only once.
 
-I numeri da guardare sono i byte per chiamata, e vanno presi in Release:
+## How to run
+
+The numbers to look at are bytes per call, and they must be taken in Release:
 
 ```bash
-dotnet run -c Release --project demos/03-ValueTask -- 3.1                         # Runtime Async, il default del repo
-dotnet run -c Release --project demos/03-ValueTask -p:RuntimeAsync=false -- 3.1   # state machine del compilatore
+dotnet run -c Release --project demos/03-ValueTask -- 3.1                         # Runtime Async, the repo default
+dotnet run -c Release --project demos/03-ValueTask -p:RuntimeAsync=false -- 3.1   # compiler state machines
 dotnet run -c Release --project demos/03-ValueTask -- 3.2
 ```
 
-Ogni scenario esegue la variante broken e poi la fixed; con `--broken` o `--fixed` ne esegue una sola.
-Il banner (`runtime async, .NET 11.0.0` oppure `compiler state machines, .NET 11.0.0`) dice con quale modello è stato compilato l'assembly.
-Da IDE ci sono i profili `menu`, `3.1 cache-hit (Release)` e `3.2 value-task-source`.
+Each scenario runs the broken variant and then the fixed one; with `--broken` or `--fixed` it runs only that one.
+The banner (`runtime async, .NET 11.0.0` or `compiler state machines, .NET 11.0.0`) tells you which model the assembly was compiled with.
+In the IDE you get the `menu`, `3.1 cache-hit (Release)` and `3.2 value-task-source` profiles.
 
-**Debug o Release.** Con Runtime Async attivo, una run in Debug dà gli stessi byte per chiamata e gli stessi esiti della Release: cambiano solo i totali di 3.2, che contano le allocazioni di tutto il processo.
-Con `-p:RuntimeAsync=false`, invece, in Debug le state machine del compilatore sono `class` e allocano a ogni chiamata: lo scenario 3.1 se ne accorge e stampa un avviso (`Debug build: compiler state machines are classes in Debug and allocate on every call. Use -c Release.`).
-Per confrontare i due modelli servono quindi due build Release.
-Il profilo `3.1 cache-hit (Release)` non imposta la configurazione: il suffisso ricorda di scegliere Release nell'IDE.
+**Debug or Release.** With Runtime Async on, a Debug run gives the same bytes per call and the same outcomes as Release: only the 3.2 totals change, because they count allocations across the whole process.
+With `-p:RuntimeAsync=false`, on the other hand, compiler state machines are a `class` in Debug and allocate on every call: scenario 3.1 detects this and prints a warning (`Debug build: compiler state machines are classes in Debug and allocate on every call. Use -c Release.`).
+Comparing the two models therefore takes two Release builds.
+The `3.1 cache-hit (Release)` profile does not set the configuration: the suffix is a reminder to pick Release in the IDE.
 
-## ★ 3.1 `cache-hit` — quanto costa un cache hit
+## ★ 3.1 `cache-hit` — what a cache hit costs
 
-[QuoteCache.cs](QuoteCache.cs): stesso codice, due tipi di ritorno.
+[QuoteCache.cs](QuoteCache.cs): same code, two return types.
 
 ```csharp
 public async Task<decimal> GetPriceAsTaskAsync(string symbol)
@@ -45,12 +47,12 @@ public async Task<decimal> GetPriceAsTaskAsync(string symbol)
 
 public async ValueTask<decimal> GetPriceAsValueTaskAsync(string symbol)
 {
-    // … stesso corpo
+    // … same body
 }
 ```
 
-Lo scenario ([CacheHitDemo.cs](CacheHitDemo.cs)) scalda la cache con una prima chiamata, un miss che va al provider, e poi misura 100.000 hit in tre modi di consumare il risultato.
-`MeasureAsync` esegue il ciclo una volta a vuoto (JIT, tiering), poi lo riesegue leggendo `GC.GetAllocatedBytesForCurrentThread()` prima e dopo: ogni hit completa in modo sincrono, quindi tutte le allocazioni avvengono sul thread corrente.
+The scenario ([CacheHitDemo.cs](CacheHitDemo.cs)) warms up the cache with a first call, a miss that goes to the provider, and then measures 100,000 hits with three ways of consuming the result.
+`MeasureAsync` runs the loop once as a warm-up (JIT, tiering), then runs it again, reading `GC.GetAllocatedBytesForCurrentThread()` before and after: every hit completes synchronously, so all the allocations happen on the current thread.
 
 **Broken: `Task<T>`.**
 
@@ -69,7 +71,7 @@ await MeasureAsync("Task<T>: await via delegate", async () =>
         await viaDelegate(Symbol);
 });
 
-// Un Task in una variabile locale in Release può ancora sparire: in un campo o in un array no.
+// A Task kept in a local can still be optimized away in Release: one kept in a field/array can't.
 await MeasureAsync("Task<T>: kept as an object", async () =>
 {
     var pending = new Task<decimal>[1];
@@ -81,7 +83,7 @@ await MeasureAsync("Task<T>: kept as an object", async () =>
 });
 ```
 
-Con le state machine del compilatore (`-p:RuntimeAsync=false`), 80 byte a hit in tutti e tre i casi:
+With compiler state machines (`-p:RuntimeAsync=false`), 80 bytes per hit in all three cases:
 
 ```text
 compiler state machines, .NET 11.0.0
@@ -92,7 +94,7 @@ compiler state machines, .NET 11.0.0
   Task<T>: kept as an object        80.0 bytes/call   (8,000,032 bytes)
 ```
 
-Con Runtime Async l'await diretto scende a zero, gli altri due no:
+With Runtime Async the direct await drops to zero, the other two do not:
 
 ```text
 runtime async, .NET 11.0.0
@@ -103,15 +105,15 @@ runtime async, .NET 11.0.0
   Task<T>: kept as an object        80.0 bytes/call   (8,000,032 bytes)
 ```
 
-I 32 byte in più dell'ultima riga sono l'array da un elemento, creato una volta per misura.
+The extra 32 bytes on the last line are the one-element array, created once per measurement.
 
-**Perché.** Con le state machine, un metodo `async Task<decimal>` che ritorna in modo sincrono consegna comunque il risultato dentro un `Task` completato.
-Il runtime tiene in cache `Task` già completati solo per pochi valori (bool, interi piccoli, `null`): un prezzo non è tra questi, quindi ogni hit alloca un `Task<decimal>` nuovo, 80 byte.
-Con Runtime Async, quando un metodo async awaita direttamente la chiamata, il risultato arriva al chiamante senza passare da un oggetto `Task`.
-Se invece il `Task` deve esistere come valore (qui il ritorno di un delegate e un elemento di array, altrove un campo o un `WhenAll`), viene creato e costa come prima.
+**Why.** With state machines, an `async Task<decimal>` method that returns synchronously still hands back its result inside a completed `Task`.
+The runtime caches completed `Task`s for only a few values (bool, small integers, `null`): a price is not one of them, so every hit allocates a new `Task<decimal>`, 80 bytes.
+With Runtime Async, when an async method awaits the call directly, the result reaches the caller without going through a `Task` object.
+If instead the `Task` has to exist as a value (here a delegate's return value and an array element, elsewhere a field or a `WhenAll`), it is created and costs the same as before.
 
-**Fixed: `ValueTask<T>`.** Gli stessi tre cicli su `GetPriceAsValueTaskAsync`, con un `Func<string, ValueTask<decimal>>` e un `ValueTask<decimal>[1]`.
-L'output è identico nei due modelli:
+**Fixed: `ValueTask<T>`.** The same three loops on `GetPriceAsValueTaskAsync`, with a `Func<string, ValueTask<decimal>>` and a `ValueTask<decimal>[1]`.
+The output is identical in both models:
 
 ```text
   ValueTask<T>: await call           0.0 bytes/call   (0 bytes)
@@ -119,31 +121,31 @@ L'output è identico nei due modelli:
   ValueTask<T>: kept as an object    0.0 bytes/call   (56 bytes)
 ```
 
-`ValueTask<decimal>` è una struct: il risultato sincrono viaggia dentro il valore, che passi da un delegate o da un array. I 56 byte sono, di nuovo, l'array.
+`ValueTask<decimal>` is a struct: the synchronous result travels inside the value, whether it goes through a delegate or an array. The 56 bytes are, once again, the array.
 
-| Byte per hit, Release | State machine | Runtime Async |
+| Bytes per hit, Release | State machine | Runtime Async |
 |---|---|---|
-| `Task<T>`, await diretto | 80 | **0** |
+| `Task<T>`, direct await | 80 | **0** |
 | `Task<T>`, await via delegate | 80 | 80 |
-| `Task<T>`, tenuto in un array | 80 | 80 |
-| `ValueTask<T>`, tutti e tre i casi | 0 | 0 |
+| `Task<T>`, kept in an array | 80 | 80 |
+| `ValueTask<T>`, all three cases | 0 | 0 |
 
-Con Runtime Async l'argomento classico, `ValueTask` sul hot path, si ridimensiona: un `Task<T>` awaitato subito non alloca più.
-`ValueTask<T>` resta decisivo quando il risultato diventa un oggetto prima di essere awaitato, e nel codice compilato senza Runtime Async.
+With Runtime Async the classic argument, `ValueTask` on the hot path, carries less weight: a `Task<T>` that is awaited right away no longer allocates.
+`ValueTask<T>` is still decisive when the result becomes an object before it is awaited, and in code compiled without Runtime Async.
 
-## ★ 3.2 `value-task-source` — zero allocazioni, un solo await
+## ★ 3.2 `value-task-source` — zero allocations, one await
 
-Il cache hit non sospende mai. Un'operazione che sospende davvero, come una ricezione dalla rete, non ha un risultato da portare inline: il `ValueTask` deve puntare a un oggetto che completerà più tardi.
-Il pattern di `Socket` è riusare quell'oggetto.
-In [QuoteFeed.cs](QuoteFeed.cs) ogni `ReceiveAsync` prende un oggetto operazione da un pool (o ne crea uno, e lo conta) e restituisce un `ValueTask` costruito su di esso.
-La "rete" risponde su un thread del thread pool, con prezzi fissi (MSFT 412.10, AAPL 228.70): un risultato sbagliato si vede subito.
+A cache hit never suspends. An operation that really suspends, such as a network receive, has no result to carry inline: the `ValueTask` has to point to an object that will complete later.
+The `Socket` pattern is to reuse that object.
+In [QuoteFeed.cs](QuoteFeed.cs) every `ReceiveAsync` takes an operation object from a pool (or creates one, and counts it) and returns a `ValueTask` built on top of it.
+The "network" answers on a thread-pool thread, with fixed prices (MSFT 412.10, AAPL 228.70): a wrong result shows up immediately.
 
-L'oggetto operazione implementa `IValueTaskSource<decimal>` delegando tutto a `ManualResetValueTaskSourceCore<decimal>`, che gestisce risultato, continuation e versione:
+The operation object implements `IValueTaskSource<decimal>` by delegating everything to `ManualResetValueTaskSourceCore<decimal>`, which handles the result, the continuation and the version:
 
 ```csharp
 sealed class QuoteOperation(PooledQuoteFeed owner) : IValueTaskSource<decimal>, IThreadPoolWorkItem
 {
-    // Struct mutabile: questo campo non va mai dichiarato readonly.
+    // Mutable struct: never make this field readonly.
     ManualResetValueTaskSourceCore<decimal> core;
     string symbol = "";
 
@@ -151,11 +153,11 @@ sealed class QuoteOperation(PooledQuoteFeed owner) : IValueTaskSource<decimal>, 
     {
         this.symbol = symbol;
         ThreadPool.UnsafeQueueUserWorkItem(this, preferLocal: false);
-        // Il token è la versione: cambia a ogni Reset, così un ValueTask scaduto viene riconosciuto.
+        // The token is the version: it changes on every Reset, so a stale ValueTask is detected.
         return new ValueTask<decimal>(this, core.Version);
     }
 
-    // La "rete" risponde su un thread del thread pool.
+    // The "network" answers on a thread-pool thread.
     void IThreadPoolWorkItem.Execute() => core.SetResult(Prices.Of(symbol));
 
     public decimal GetResult(short token)
@@ -166,7 +168,7 @@ sealed class QuoteOperation(PooledQuoteFeed owner) : IValueTaskSource<decimal>, 
         }
         finally
         {
-            // Consumato: reset (version++) e ritorno nel pool, pronto per la prossima ReceiveAsync.
+            // Consumed: reset (version++) and back to the pool, ready for the next ReceiveAsync.
             core.Reset();
             owner.Return(this);
         }
@@ -179,17 +181,17 @@ sealed class QuoteOperation(PooledQuoteFeed owner) : IValueTaskSource<decimal>, 
 }
 ```
 
-**Broken.** Tre parti, in [ValueTaskSourceDemo.cs](ValueTaskSourceDemo.cs).
+**Broken.** Three parts, in [ValueTaskSourceDemo.cs](ValueTaskSourceDemo.cs).
 
-*Una `TaskCompletionSource` per operazione* (`TcsQuoteFeed`): ogni `ReceiveAsync` crea un oggetto operazione, la sua `TaskCompletionSource` e il `Task` di questa.
-Qui le completion girano su thread del thread pool, quindi `MeasureAsync` conta le allocazioni di tutto il processo con `GC.GetTotalAllocatedBytes(precise: true)`:
+*One `TaskCompletionSource` per operation* (`TcsQuoteFeed`): every `ReceiveAsync` creates an operation object, its `TaskCompletionSource` and that source's `Task`.
+Here the completions run on thread-pool threads, so `MeasureAsync` counts the allocations of the whole process with `GC.GetTotalAllocatedBytes(precise: true)`:
 
 ```text
 ── A TaskCompletionSource per operation
   TaskCompletionSource feed         136.0 bytes/operation   (13,601,672 bytes)
 ```
 
-*Lo stesso `ValueTask` awaitato due volte*, sul feed pooled corretto:
+*The same `ValueTask` awaited twice*, on the correct pooled feed:
 
 ```csharp
 var pending = feed.ReceiveAsync("MSFT");
@@ -210,10 +212,10 @@ catch (InvalidOperationException ex)
 ✘ InvalidOperationException: the token is stale, the operation object was already reset and pooled
 ```
 
-Il primo `await` passa da `GetResult`, che fa `Reset()` e rimette l'oggetto nel pool.
-Il secondo presenta il token della versione precedente: `ManualResetValueTaskSourceCore` non lo riconosce e solleva `InvalidOperationException`, che la demo cattura e stampa.
+The first `await` goes through `GetResult`, which calls `Reset()` and puts the object back in the pool.
+The second one presents the token of the previous version: `ManualResetValueTaskSourceCore` does not recognize it and throws `InvalidOperationException`, which the demo catches and prints.
 
-*Una sorgente ingenua che ignora il token* (`NaivePooledQuoteFeed`): stesso pool, ma il token è sempre 0 e `GetResult` restituisce il prezzo che l'oggetto ha in quel momento.
+*A naive source that ignores the token* (`NaivePooledQuoteFeed`): same pool, but the token is always 0 and `GetResult` returns whatever price the object holds at that moment.
 
 ```csharp
 public ValueTask<decimal> Start(string symbol)
@@ -233,7 +235,7 @@ public decimal GetResult(short token)
 }
 ```
 
-La demo awaita il `ValueTask` di MSFT, chiede AAPL (lo stesso oggetto, ripreso dal pool), poi awaita di nuovo il primo:
+The demo awaits the MSFT `ValueTask`, asks for AAPL (the same object, taken back out of the pool), then awaits the first one again:
 
 ```csharp
 var first = naive.ReceiveAsync("MSFT");
@@ -249,14 +251,14 @@ var again = await first;
 ✘ MSFT again = 228.70  ← that's AAPL's price
 ```
 
-Nessuna eccezione: il secondo `await` su `first` legge lo stato dell'oggetto riusato e restituisce il prezzo di AAPL come se fosse MSFT.
-E `GetResult` rimette l'oggetto nel pool anche questa volta: ora ci compare due volte, e le prossime due `ReceiveAsync` si contenderebbero lo stesso oggetto.
+No exception: the second `await` on `first` reads the state of the reused object and returns AAPL's price as if it were MSFT's.
+And `GetResult` puts the object back in the pool this time too: now it is in there twice, and the next two `ReceiveAsync` calls would compete for the same object.
 
-**Perché.** Un `ValueTask` costruito su una `IValueTaskSource` vale per un solo await dell'operazione corrente di quell'oggetto.
-Dopo il consumo l'oggetto torna nel pool e serve un'altra operazione: il token è l'unico modo di distinguere le due.
-Con il token l'errore diventa un'eccezione, senza diventa un dato sbagliato.
+**Why.** A `ValueTask` built on an `IValueTaskSource` is good for a single await of that object's current operation.
+Once consumed, the object goes back to the pool and serves another operation: the token is the only way to tell the two apart.
+With the token the mistake becomes an exception; without it, it becomes wrong data.
 
-**Fixed.** Il feed pooled consumato come va consumato, un `await` per ogni `ValueTask`; quando servono più await o un combinatore si paga un `Task`, solo lì.
+**Fixed.** The pooled feed consumed the way it is meant to be, one `await` per `ValueTask`; when you need several awaits or a combinator, you pay for a `Task`, and only there.
 
 ```csharp
 await MeasureAsync("Pooled IValueTaskSource feed", async () =>
@@ -281,23 +283,23 @@ var both = await Task.WhenAll(feed.ReceiveAsync("MSFT").AsTask(), feed.ReceiveAs
 ✔ WhenAll via AsTask(): MSFT = 412.10, AAPL = 228.70
 ```
 
-Le 100.000 operazioni completano su un thread del thread pool e usano un solo oggetto operazione: ogni `await` lo restituisce al pool prima che parta la richiesta successiva.
-Il totale, 352 byte su 100.000 operazioni (128 nella build a state machine), è misurato su tutto il processo.
-`Preserve()` restituisce un `ValueTask` basato su un `Task`, che si può awaitare più volte; `AsTask()` serve per passare le operazioni a `WhenAll`.
+The 100,000 operations complete on a thread-pool thread and use a single operation object: each `await` returns it to the pool before the next request starts.
+The total, 352 bytes over 100,000 operations (128 in the state machine build), is measured across the whole process.
+`Preserve()` returns a `Task`-backed `ValueTask` that can be awaited multiple times; `AsTask()` is what lets you pass the operations to `WhenAll`.
 
 | Release | State machine | Runtime Async |
 |---|---|---|
-| `TaskCompletionSource` per operazione | 136 byte/operazione | 136 byte/operazione |
-| `IValueTaskSource` pooled | 0 byte/operazione, 1 oggetto | 0 byte/operazione, 1 oggetto |
-| stesso `ValueTask` awaitato due volte | `InvalidOperationException` | `InvalidOperationException` |
-| sorgente senza token | 228.70 restituito come MSFT | 228.70 restituito come MSFT |
+| `TaskCompletionSource` per operation | 136 bytes/operation | 136 bytes/operation |
+| pooled `IValueTaskSource` | 0 bytes/operation, 1 object | 0 bytes/operation, 1 object |
+| same `ValueTask` awaited twice | `InvalidOperationException` | `InvalidOperationException` |
+| source without a token | 228.70 returned as MSFT | 228.70 returned as MSFT |
 
-Qui il modello di compilazione non cambia nulla: i byte per operazione dipendono dalla sorgente, non da come è compilato il metodo che awaita.
-Una `IValueTaskSource` pooled rende gratis un'operazione che sospende davvero, anche con Runtime Async; in cambio il `ValueTask` va consumato una volta sola, e chi scrive la sorgente deve controllare il token.
+Here the compilation model changes nothing: bytes per operation depend on the source, not on how the awaiting method is compiled.
+A pooled `IValueTaskSource` makes an operation that really suspends free, with Runtime Async too; in exchange, the `ValueTask` must be consumed only once, and whoever writes the source has to check the token.
 
-## Benchmark
+## Benchmarks
 
-In [benchmarks/BeyondAsyncAwait.Benchmarks](../../benchmarks/BeyondAsyncAwait.Benchmarks) ogni benchmark gira due volte: job `StateMachine` (baseline) e job `RuntimeAsync`.
+In [benchmarks/BeyondAsyncAwait.Benchmarks](../../benchmarks/BeyondAsyncAwait.Benchmarks) every benchmark runs twice: the `StateMachine` job (baseline) and the `RuntimeAsync` job.
 
 ```bash
 dotnet run -c Release --project benchmarks/BeyondAsyncAwait.Benchmarks -- --filter '*ValueTask*'
@@ -305,40 +307,40 @@ dotnet run -c Release --project benchmarks/BeyondAsyncAwait.Benchmarks -- --filt
 
 In [ValueTaskBenchmarks.cs](../../benchmarks/BeyondAsyncAwait.Benchmarks/ValueTaskBenchmarks.cs):
 
-- `Hit_Task_Awaited` e `Hit_ValueTask_Awaited`: 100 cache hit awaitati direttamente dentro un metodo async; con `OperationsPerInvoke` i numeri sono per hit.
-- `Hit_Task_Materialized`: il `Task` del cache hit tenuto in un campo, quindi deve esistere come oggetto.
-- `Suspend_ValueTask` e `Suspend_PoolingValueTask`: un `async ValueTask<int>` che sospende davvero (`Task.Yield`), con il builder standard e con `[AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder<>))]`.
+- `Hit_Task_Awaited` and `Hit_ValueTask_Awaited`: 100 cache hits awaited directly inside an async method; with `OperationsPerInvoke` the numbers are per hit.
+- `Hit_Task_Materialized`: the cache hit's `Task` kept in a field, so it has to exist as an object.
+- `Suspend_ValueTask` and `Suspend_PoolingValueTask`: an `async ValueTask<int>` that really suspends (`Task.Yield`), with the standard builder and with `[AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder<>))]`.
 
-Risultati **indicativi** (`--quick`, i7-11800H, .NET 11.0.0): rifalli sulla tua macchina, senza `--quick`.
+**Indicative** results (`--quick`, i7-11800H, .NET 11.0.0): rerun them on your own machine, without `--quick`.
 
 | Benchmark | StateMachine | RuntimeAsync |
 |---|---|---|
-| cache hit, `Task<T>` awaitato | 18 ns, 81 B | **11 ns, 0 B** |
-| cache hit, `ValueTask<T>` awaitato | 17 ns, 1 B | 11 ns, 0 B |
-| cache hit, `Task<T>` tenuto in un campo | 22 ns, 80 B | 24 ns, 80 B |
-| sospensione, `ValueTask<T>` | 426 ns, 104 B | 342 ns, 104 B |
-| sospensione, `PoolingAsyncValueTaskMethodBuilder` | 422 ns, **0 B** | 353 ns, **104 B** |
+| cache hit, `Task<T>` awaited | 18 ns, 81 B | **11 ns, 0 B** |
+| cache hit, `ValueTask<T>` awaited | 17 ns, 1 B | 11 ns, 0 B |
+| cache hit, `Task<T>` kept in a field | 22 ns, 80 B | 24 ns, 80 B |
+| suspending, `ValueTask<T>` | 426 ns, 104 B | 342 ns, 104 B |
+| suspending, `PoolingAsyncValueTaskMethodBuilder` | 422 ns, **0 B** | 353 ns, **104 B** |
 
-- **Hit awaitato**: con le state machine `Task<T>` paga gli 80 B del suo `Task` a ogni hit, `ValueTask<T>` no. Il byte in più su entrambe le righe è il `Task<decimal>` del metodo di benchmark, anch'esso `async`, diviso sui 100 hit. Con Runtime Async entrambi scendono a 0 B e 11 ns: per un await diretto `Task<T>` e `ValueTask<T>` si equivalgono.
-- **`Task` in un campo**: 80 B in entrambi i job, con tempi simili. Quando il `Task` deve esistere come oggetto Runtime Async non lo può evitare: è la riga "kept as an object" dello scenario 3.1.
-- **Sospensione**: quando il metodo sospende davvero il risultato inline non serve, e con le state machine `ValueTask<T>` alloca 104 B. Il pooling builder riusa i box delle state machine e scende a 0 B. Nel job RuntimeAsync le due righe si allineano a 104 B: i metodi con `PoolingAsyncValueTaskMethodBuilder` escono da Runtime Async, e il vantaggio del pooling non si vede più. Runtime Async è più veloce in entrambi i casi, ma le due ottimizzazioni non si sommano.
+- **Awaited hit**: with state machines `Task<T>` pays the 80 B of its `Task` on every hit, `ValueTask<T>` does not. The extra byte on both rows is the `Task<decimal>` of the benchmark method, itself `async`, spread over the 100 hits. With Runtime Async both drop to 0 B and 11 ns: for a direct await, `Task<T>` and `ValueTask<T>` are equivalent.
+- **`Task` in a field**: 80 B in both jobs, with similar timings. When the `Task` has to exist as an object, Runtime Async cannot avoid it: this is the "kept as an object" line of scenario 3.1.
+- **Suspending**: when the method really suspends, the inline result is of no use, and with state machines `ValueTask<T>` allocates 104 B. The pooling builder reuses the state machine boxes and gets down to 0 B. In the RuntimeAsync job the two rows line up at 104 B: methods with `PoolingAsyncValueTaskMethodBuilder` drop out of Runtime Async, and the benefit of pooling no longer shows. Runtime Async is faster in both cases, but the two optimizations do not add up.
 
-Il harness di BenchmarkDotNet è compilato con lo stesso `RuntimeAsync` del codice misurato: per questo `Hit_Task_Materialized` tiene il `Task` in un campo.
-Restituirlo e basta non servirebbe: il harness lo awaiterebbe direttamente, e con Runtime Async il `Task` non verrebbe materializzato.
+The BenchmarkDotNet harness is compiled with the same `RuntimeAsync` setting as the code being measured: that is why `Hit_Task_Materialized` keeps the `Task` in a field.
+Simply returning it would not be enough: the harness would await it directly, and with Runtime Async the `Task` would not be materialized.
 
-## Cosa sapere prima di usare ValueTask
+## What to know before using ValueTask
 
-- **Il default resta `Task`.** La documentazione di `ValueTask<TResult>` consiglia di passare a `ValueTask` solo quando un'analisi delle prestazioni lo giustifica. Un `ValueTask` ha più campi di un riferimento: costa di più copiarlo e ingrandisce la state machine del chiamante che lo awaita.
-- **Quando ripaga ancora.** Con Runtime Async, per un hot path sincrono, quando il chiamante riceve il risultato attraverso un delegate o lo conserva in un campo prima di awaitarlo (scenario 3.1). Nel codice compilato senza Runtime Async, che in .NET 11 è opt-in (in questo repo lo attiva [Directory.Build.targets](../../Directory.Build.targets)), vale il consiglio classico. Per le operazioni che sospendono davvero serve una `IValueTaskSource` riusabile, come fanno `Socket` e `NetworkStream` (scenario 3.2).
-- **Un `ValueTask` si consuma una volta sola.** La documentazione elenca cosa non fare mai: awaitarlo più volte, chiamare `AsTask()` più volte, usare `.Result` o `.GetAwaiter().GetResult()` prima che l'operazione sia completata (o più volte), combinare più di questi modi. Stephen Toub aggiunge: mai due await in parallelo, perché l'oggetto dietro supporta un solo consumatore alla volta. Il risultato è indefinito: con `ManualResetValueTaskSourceCore` un'eccezione, con una sorgente scritta male il dato di un'altra operazione.
-- **Serve di più? Convertilo una volta.** `AsTask()` per passarlo a `WhenAll` / `WhenAny` o per awaitarlo più volte (da lì in poi si usa il `Task`); `Preserve()` restituisce un `ValueTask` utilizzabile in qualsiasi momento. Si paga un `Task`, solo dove serve.
-- **CA2012** ("Use ValueTasks correctly") segnala i `ValueTask` scartati, consumati più volte o letti prima di essere completati, e chiede di awaitarli direttamente invece di tenerli in variabili o campi. In .NET 11 è attiva come suggerimento; in questo repo è disattivata ([Directory.Build.props](../../Directory.Build.props)), perché lo scenario 3.2 usa male un `ValueTask` apposta.
-- **Per scrivere una `IValueTaskSource`** delega a `ManualResetValueTaskSourceCore<T>`: è una struct mutabile (il campo non va mai dichiarato `readonly`), il token del `ValueTask` è la sua `Version`, e `Reset()` va chiamato dopo aver consumato il risultato, prima di rimettere l'oggetto nel pool. Un oggetto pooled serve un'operazione alla volta: con operazioni concorrenti il pool di [QuoteFeed.cs](QuoteFeed.cs) ne crea uno per ogni operazione in volo.
-- **`PoolingAsyncValueTaskMethodBuilder`** fa uscire il metodo da Runtime Async: il pooling dei box e Runtime Async non si sommano (vedi i benchmark).
+- **`Task` is still the default.** The `ValueTask<TResult>` documentation recommends switching to `ValueTask` only when performance analysis justifies it. A `ValueTask` has more fields than a reference: it costs more to copy, and it makes the state machine of the caller that awaits it larger.
+- **When it still pays off.** With Runtime Async, for a synchronous hot path, when the caller receives the result through a delegate or stores it in a field before awaiting it (scenario 3.1). In code compiled without Runtime Async, which is opt-in in .NET 11 (in this repo it is turned on by [Directory.Build.targets](../../Directory.Build.targets)), the classic advice holds. Operations that really suspend need a reusable `IValueTaskSource`, as `Socket` and `NetworkStream` do (scenario 3.2).
+- **A `ValueTask` can be consumed only once.** The documentation lists what you should never do: await it more than once, call `AsTask()` more than once, use `.Result` or `.GetAwaiter().GetResult()` before the operation has completed (or more than once), or combine any of these. Stephen Toub adds: never two awaits in parallel, because the object behind it supports only one consumer at a time. The result is undefined: with `ManualResetValueTaskSourceCore` an exception, with a badly written source another operation's data.
+- **Need more? Convert it once.** `AsTask()` to pass it to `WhenAll` / `WhenAny` or to await it more than once (from then on you use the `Task`); `Preserve()` returns a `ValueTask` that can be used at any time. You pay for a `Task`, only where you need one.
+- **CA2012** ("Use ValueTasks correctly") flags `ValueTask`s that are discarded, consumed more than once, or read before they have completed, and asks you to await them directly instead of keeping them in variables or fields. In .NET 11 it is enabled as a suggestion; in this repo it is disabled ([Directory.Build.props](../../Directory.Build.props)), because scenario 3.2 misuses a `ValueTask` on purpose.
+- **To write an `IValueTaskSource`**, delegate to `ManualResetValueTaskSourceCore<T>`: it is a mutable struct (the field must never be declared `readonly`), the `ValueTask` token is its `Version`, and `Reset()` must be called after the result has been consumed, before the object goes back to the pool. A pooled object serves one operation at a time: with concurrent operations, the pool in [QuoteFeed.cs](QuoteFeed.cs) creates one for each operation in flight.
+- **`PoolingAsyncValueTaskMethodBuilder`** makes the method drop out of Runtime Async: box pooling and Runtime Async do not add up (see the benchmarks).
 
-## Riferimenti
+## References
 
 - [Stephen Toub — Understanding the Whys, Whats, and Whens of ValueTask](https://devblogs.microsoft.com/dotnet/understanding-the-whys-whats-and-whens-of-valuetask/)
-- [`ValueTask<TResult>` — documentazione API](https://learn.microsoft.com/dotnet/api/system.threading.tasks.valuetask-1)
-- [`ManualResetValueTaskSourceCore<TResult>` — documentazione API](https://learn.microsoft.com/dotnet/api/system.threading.tasks.sources.manualresetvaluetasksourcecore-1)
+- [`ValueTask<TResult>` — API documentation](https://learn.microsoft.com/dotnet/api/system.threading.tasks.valuetask-1)
+- [`ManualResetValueTaskSourceCore<TResult>` — API documentation](https://learn.microsoft.com/dotnet/api/system.threading.tasks.sources.manualresetvaluetasksourcecore-1)
 - [CA2012: Use ValueTasks correctly](https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca2012)

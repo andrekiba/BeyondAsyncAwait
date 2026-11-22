@@ -1,43 +1,45 @@
-# Demo 6 — Molti valori, push: Task ↔ Rx.NET, e AsyncRx
+# Demo 6 — Many values, push: Task ↔ Rx.NET, and AsyncRx
 
-La [Demo 5](../05-Channels) trattava molti valori in *pull*: il consumer legge da un `Channel` quando è pronto.
-Qui i valori arrivano in *push*: decide il producer quando, e il consumer viene chiamato.
+**English** · [Italiano](README-it.md)
 
-`Task<T>` e `IObservable<T>` sono i due estremi: un valore che chiedi e poi aspetti, contro una sequenza di valori che ti viene consegnata.
-In QuoteHub convivono: le chiamate al provider di quotazioni sono `Task`, i prezzi pubblicati sono uno stream Rx, la configurazione si ricarica da sola con un timer, e chi consuma vuole a volte un prezzo solo (`await`), a volte un `IAsyncEnumerable`.
-Rx converte in entrambe le direzioni, ma ogni conversione ha una semantica precisa, e gli scenari 6.1–6.4 mostrano dove sorprende: quale valore restituisce `await observable`, cosa ripete `Retry`, cosa cancella il dispose, dove si accumula l'arretrato.
+[Demo 5](../05-Channels/README.md) dealt with many values in *pull* mode: the consumer reads from a `Channel` when it is ready.
+Here the values arrive by *push*: the producer decides when, and the consumer gets called.
 
-Il limite di fondo di Rx classico è che `IObserver<T>.OnNext` è `void`: un observer che fa lavoro async non può dire al producer di aspettare, e anche `Subscribe` e `Dispose` sono sincroni.
-**AsyncRx.NET** (`System.Reactive.Async`) definisce `IAsyncObservable<T>` e `IAsyncObserver<T>`: `OnNextAsync` restituisce un `ValueTask` che il producer awaita (backpressure per costruzione), `SubscribeAsync` si awaita, e la sottoscrizione si chiude con `DisposeAsync`.
-È sperimentale, l'unica build su NuGet è un'alpha del 2023, ma gli scenari 6.5–6.7 mostrano il problema che risolve, e il 6.6 dove si ferma.
+`Task<T>` and `IObservable<T>` are the two extremes: one value you ask for and then wait on, versus a sequence of values that is delivered to you.
+In QuoteHub they live side by side: calls to the quote provider are `Task`s, published prices are an Rx stream, the configuration reloads itself on a timer, and consumers sometimes want a single price (`await`), sometimes an `IAsyncEnumerable`.
+Rx converts in both directions, but every conversion has precise semantics, and scenarios 6.1–6.4 show where they surprise you: which value `await observable` returns, what `Retry` repeats, what disposing cancels, where the backlog piles up.
 
-## Come si lancia
+The fundamental limit of classic Rx is that `IObserver<T>.OnNext` is `void`: an observer doing async work cannot tell the producer to wait, and `Subscribe` and `Dispose` are synchronous too.
+**AsyncRx.NET** (`System.Reactive.Async`) defines `IAsyncObservable<T>` and `IAsyncObserver<T>`: `OnNextAsync` returns a `ValueTask` that the producer awaits (backpressure by construction), `SubscribeAsync` can be awaited, and the subscription is closed with `DisposeAsync`.
+It is experimental, and the only build on NuGet is a 2023 alpha, but scenarios 6.5–6.7 show the problem it solves, and 6.6 shows where it stops.
+
+## How to run
 
 ```bash
-dotnet run --project demos/06-RxInterop -- 6.1                     # broken, Invio, fixed
+dotnet run --project demos/06-RxInterop -- 6.1                     # broken, Enter, fixed
 dotnet run --project demos/06-RxInterop -- asyncrx-bridge --fixed
-dotnet run --project demos/06-RxInterop -- all --no-pause          # tutti gli scenari, entrambe le varianti
+dotnet run --project demos/06-RxInterop -- all --no-pause          # all scenarios, both variants
 ```
 
-Da IDE ci sono il profilo `menu` e un profilo per scenario, da `6.1 task-observable` a `6.7 asyncrx-lifecycle` ([launchSettings.json](Properties/launchSettings.json)).
-Da terminale lo stesso profilo si sceglie con `--launch-profile "6.3 rx-to-channel"`.
+In the IDE there is the `menu` profile plus one profile per scenario, from `6.1 task-observable` to `6.7 asyncrx-lifecycle` ([launchSettings.json](Properties/launchSettings.json)).
+From the terminal you pick the same profile with `--launch-profile "6.3 rx-to-channel"`.
 
-I pacchetti ([Demo06.RxInterop.csproj](Demo06.RxInterop.csproj), versioni in [Directory.Packages.props](../../Directory.Packages.props)):
+The packages ([Demo06.RxInterop.csproj](Demo06.RxInterop.csproj), versions in [Directory.Packages.props](../../Directory.Packages.props)):
 
-| Pacchetto | Versione | Cosa usa la Demo |
+| Package | Version | What the Demo uses |
 |---|---|---|
 | `System.Reactive` | 7.0.0 | Rx.NET: `Observable`, `Subject<T>`, `ToObservable`/`ToTask`, `FromAsync`, `Concat`/`Merge`/`Switch`, `Replay`/`RefCount`/`AutoConnect` |
 | `System.Interactive.Async` | 7.0.1 | Ix: `IObservable<T>.ToAsyncEnumerable()` (6.3) |
-| `System.Reactive.Async` | 6.0.0-alpha.18 | AsyncRx.NET, sperimentale: `IAsyncObservable<T>`, `AsyncObservable.Create`/`Interval`, `ToAsyncObservable()` (6.5–6.7) |
+| `System.Reactive.Async` | 6.0.0-alpha.18 | AsyncRx.NET, experimental: `IAsyncObservable<T>`, `AsyncObservable.Create`/`Interval`, `ToAsyncObservable()` (6.5–6.7) |
 
-Gli output qui sotto vengono da un'esecuzione in Debug su .NET 11.0.0.
-Millisecondi, ordine di completamento e i conteggi che dipendono dai tempi cambiano da un'esecuzione all'altra: sono i valori di quella esecuzione.
+The output below comes from a Debug run on .NET 11.0.0.
+Milliseconds, completion order and timing-dependent counts change from one run to the next: these are the values from that run.
 
-## ★ 6.1 `task-observable` — await, Retry e cancellazione tra Task e IObservable
+## ★ 6.1 `task-observable` — await, Retry and cancellation between Task and IObservable
 
-Tre conversioni fra i due mondi, in [TaskObservableDemo.cs](TaskObservableDemo.cs), con una semantica che non coincide con quella del `Task`.
+Three conversions between the two worlds, in [TaskObservableDemo.cs](TaskObservableDemo.cs), whose semantics do not match those of a `Task`.
 
-**`await` su un observable.** `IObservable<T>` è awaitabile, ma l'`await` aspetta che la sequenza *completi* e restituisce l'*ultimo* valore.
+**`await` on an observable.** `IObservable<T>` is awaitable, but the `await` waits for the sequence to *complete* and returns the *last* value.
 
 ```csharp
 static IObservable<decimal> PriceTicks() =>
@@ -56,10 +58,10 @@ await Observable.Interval(TimeSpan.FromMilliseconds(100)).ToTask(giveUp.Token);
 ✘ await Observable.Interval(...) → never completes (gave up after 500 ms)
 ```
 
-Chi scrive `await prices` intende "il prezzo corrente" e ottiene il terzo e ultimo, dopo 330 ms.
-Una sequenza vuota non ha un valore da restituire, quindi `InvalidOperationException`; una sequenza infinita non completa mai, e nella demo serve un token per smettere di aspettarla dopo 500 ms.
+Whoever writes `await prices` means "the current price" and gets the third and last one, after 330 ms.
+An empty sequence has no value to return, hence `InvalidOperationException`; an infinite sequence never completes, and the demo needs a token to stop waiting for it after 500 ms.
 
-La correzione è dire quale valore si vuole:
+The fix is to say which value you want:
 
 ```csharp
 var price = await PriceTicks().FirstAsync();
@@ -75,12 +77,12 @@ var tick = await Observable.Interval(TimeSpan.FromMilliseconds(100)).FirstAsync(
 ✔ await Observable.Interval(...).FirstAsync() → 0
 ```
 
-**`Retry` su un Task.** Il provider fallisce le prime due chiamate, e la pipeline ritenta con `Retry(3)`.
+**`Retry` on a Task.** The provider fails the first two calls, and the pipeline retries with `Retry(3)`.
 
 ```csharp
 IObservable<Quote> quotes = variant == Variant.Broken
-    ? provider.GetQuoteAsync("MSFT").ToObservable()                         // la chiamata parte qui, una volta
-    : Observable.FromAsync(ct => provider.GetQuoteAsync("MSFT", ct));        // una chiamata nuova per ogni sottoscrizione
+    ? provider.GetQuoteAsync("MSFT").ToObservable()                         // the call starts here, once
+    : Observable.FromAsync(ct => provider.GetQuoteAsync("MSFT", ct));        // a new call per subscription
 
 var quote = await quotes
     .Do(_ => { }, ex => Out.Log($"attempt {++attempts} failed: {ex.Message}"))
@@ -98,10 +100,10 @@ var quote = await quotes
   Provider calls                   1
 ```
 
-`GetQuoteAsync` viene chiamato mentre si costruisce l'observable, prima di qualsiasi sottoscrizione: `ToObservable()` avvolge un `Task` già partito.
-`Retry` si risottoscrive, ma allo stesso `Task` già fallito: tre tentativi in 3 ms, sempre l'errore di `call #1`, una sola chiamata al provider.
+`GetQuoteAsync` is called while the observable is being built, before any subscription: `ToObservable()` wraps a `Task` that is already running.
+`Retry` resubscribes, but to the same `Task`, which has already failed: three attempts in 3 ms, always the error from `call #1`, a single call to the provider.
 
-Con `Observable.FromAsync` la factory gira a ogni sottoscrizione, e ogni tentativo è una chiamata vera:
+With `Observable.FromAsync` the factory runs on every subscription, and every attempt is a real call:
 
 ```text
    223 ms [t  7] provider → MSFT (call #1)
@@ -117,7 +119,7 @@ Con `Observable.FromAsync` la factory gira a ogni sottoscrizione, e ogni tentati
   Provider calls                   3
 ```
 
-**Cancellazione.** Stesse due sorgenti, provider da 200 ms, dispose della sottoscrizione dopo 50 ms.
+**Cancellation.** The same two sources, a 200 ms provider, and the subscription disposed after 50 ms.
 
 ```csharp
 var subscription = quote.Subscribe(q => Out.Log($"subscriber got {q.Price}"));
@@ -125,7 +127,7 @@ await Task.Delay(50);
 subscription.Dispose();
 ```
 
-Con `ToObservable()` il dispose smette di consegnare il risultato, ma la chiamata va avanti fino alla fine:
+With `ToObservable()` disposing stops the result from being delivered, but the call carries on to the end:
 
 ```text
    964 ms [t  7] provider → MSFT (call #1)
@@ -135,7 +137,7 @@ Con `ToObservable()` il dispose smette di consegnare il risultato, ma la chiamat
 ✘ Nobody is listening, but the call ran to completion anyway
 ```
 
-Con `FromAsync(ct => …)` Rx cancella il token quando si fa dispose della sottoscrizione:
+With `FromAsync(ct => …)` Rx cancels the token when the subscription is disposed:
 
 ```text
    554 ms [t  7] provider → MSFT (call #1)
@@ -145,22 +147,22 @@ Con `FromAsync(ct => …)` Rx cancella il token quando si fa dispose della sotto
 ✔ Disposing the subscription cancelled the CancellationToken
 ```
 
-Il messaggio: `ToObservable()` adatta un `Task` che esiste già, un risultato solo e condiviso.
-Un'*operazione* da ripetere o cancellare si porta in Rx con `Observable.FromAsync(ct => …)`: lazy, una chiamata per sottoscrizione, token legato al dispose.
+The takeaway: `ToObservable()` adapts a `Task` that already exists, a single, shared result.
+An *operation* you want to retry or cancel is brought into Rx with `Observable.FromAsync(ct => …)`: lazy, one call per subscription, token tied to the dispose.
 
-## ★ 6.2 `async-in-pipeline` — chiamate async dentro una pipeline Rx
+## ★ 6.2 `async-in-pipeline` — async calls inside an Rx pipeline
 
-Otto richieste di prezzo, una ogni 50 ms; per ognuna una chiamata async che dura fra 110 e 400 ms, con durate diverse per richiesta, quindi l'ordine di completamento non è quello di arrivo.
-Un probe in [AsyncInPipelineDemo.cs](AsyncInPipelineDemo.cs) conta le chiamate in volo, l'ordine di completamento e le cancellazioni.
+Eight price requests, one every 50 ms; each one makes an async call that takes between 110 and 400 ms, with a different duration per request, so the completion order is not the arrival order.
+A probe in [AsyncInPipelineDemo.cs](AsyncInPipelineDemo.cs) counts the calls in flight, the completion order and the cancellations.
 
-**`Subscribe(async …)`.** Il modo che viene in mente per primo:
+**`Subscribe(async …)`.** The first approach that comes to mind:
 
 ```csharp
 Requests().Subscribe(
     async seq =>
     {
-        // async void: Rx non lo aspetta. Se sollevasse un'eccezione, andrebbe al thread pool
-        // e terminerebbe il processo: OnError non la vedrebbe mai.
+        // async void: Rx doesn't wait for this. If it threw, the exception would go to the
+        // thread pool and terminate the process — OnError would never see it.
         var quote = await probe.PriceAsync(seq);
         Out.Log($"#{seq} {quote.Symbol} = {quote.Price}");
     },
@@ -185,10 +187,10 @@ Requests().Subscribe(
 ✘ The stream said "completed" while the work was still running
 ```
 
-`OnNext` è `void`, quindi la lambda è `async void`: Rx la chiama, riprende il controllo al primo `await` e passa all'elemento successivo.
-Nessun limite (6 chiamate in volo), nessun ordine, e `OnCompleted` arriva quando completa la *sorgente*, a 409 ms, mentre l'ultimo risultato arriva a 675 ms.
+`OnNext` is `void`, so the lambda is `async void`: Rx calls it, gets control back at the first `await` and moves on to the next element.
+No limit (6 calls in flight), no ordering, and `OnCompleted` arrives when the *source* completes, at 409 ms, while the last result arrives at 675 ms.
 
-**`SelectMany(async …)`.** Aspetta i risultati, e il suo `OnCompleted` arriva dopo l'ultimo:
+**`SelectMany(async …)`.** It waits for the results, and its `OnCompleted` arrives after the last one:
 
 ```csharp
 var quotes = await Requests().SelectMany(async seq => await probe.PriceAsync(seq)).ToList();
@@ -207,31 +209,31 @@ var quotes = await Requests().SelectMany(async seq => await probe.PriceAsync(seq
 ✘ Nobody listens any more, the calls run to the end anyway
 ```
 
-Però è un merge senza limite: tutto in parallelo, risultati in ordine di completamento.
-E la lambda non riceve un token: dopo il dispose 4 chiamate arrivano comunque in fondo.
+But it is an unbounded merge: everything in parallel, results in completion order.
+And the lambda gets no token: after the dispose, 4 calls run to the end anyway.
 
-**Fixed.** Ogni richiesta diventa un `Observable.FromAsync`, che non parte finché qualcuno non si sottoscrive.
-Il risultato è un `IObservable<IObservable<Quote>>`, e la politica la sceglie l'operatore che lo appiattisce:
+**Fixed.** Each request becomes an `Observable.FromAsync`, which does not start until someone subscribes.
+The result is an `IObservable<IObservable<Quote>>`, and the policy is chosen by the operator that flattens it:
 
 ```csharp
 await ComposeAsync("Select(FromAsync).Concat() — one at a time, in order", s => s.Concat());
 await ComposeAsync("Select(FromAsync).Merge(4) — at most 4 in flight", s => s.Merge(4));
 await ComposeAsync("Select(FromAsync).Switch() — latest wins, stale calls cancelled", s => s.Switch());
 
-// … dentro ComposeAsync
+// … inside ComposeAsync
 var calls = Requests().Select(seq => Observable.FromAsync(ct => probe.PriceAsync(seq, ct)));
 var quotes = await compose(calls).ToList();
 ```
 
-| Operatore | Max in volo | Ordine di completamento | Cancellate | Tempo |
+| Operator | Max in flight | Completion order | Cancelled | Time |
 |---|---|---|---|---|
 | `Concat()` | 1 | #0 #1 #2 #3 #4 #5 #6 #7 | 0 | 2047 ms |
 | `Merge(4)` | 4 | #1 #3 #2 #0 #5 #6 #4 #7 | 0 | 755 ms |
-| `Switch()` | 2 | #7 (un solo risultato) | 7 | 680 ms |
+| `Switch()` | 2 | #7 (a single result) | 7 | 680 ms |
 
-- `Concat()` si sottoscrive alla chiamata successiva solo quando la precedente ha completato: in ordine, una alla volta, e il tempo totale è circa la somma delle durate.
-- `Merge(4)` tiene al massimo 4 chiamate aperte: il provider non vede più di 4 richieste concorrenti.
-- `Switch()` a ogni nuova richiesta si disiscrive dalla precedente, e il dispose cancella il token di `FromAsync`. Le richieste arrivano ogni 50 ms e nessuna chiamata dura meno di 110 ms, quindi arriva solo l'ultima:
+- `Concat()` subscribes to the next call only when the previous one has completed: in order, one at a time, and the total time is roughly the sum of the durations.
+- `Merge(4)` keeps at most 4 calls open: the provider never sees more than 4 concurrent requests.
+- `Switch()` unsubscribes from the previous request whenever a new one arrives, and the dispose cancels the `FromAsync` token. Requests arrive every 50 ms and no call takes less than 110 ms, so only the last one gets through:
 
 ```text
   2912 ms [t  5] ⊘ #0 MSFT cancelled
@@ -244,17 +246,17 @@ var quotes = await compose(calls).ToList();
   Calls cancelled                  7
 ```
 
-Il messaggio: il lavoro async in una pipeline va espresso come observable (`FromAsync`), non come callback.
-Così l'operatore decide concorrenza, ordine e cancellazione: in ordine, al massimo *n*, oppure solo l'ultimo.
+The takeaway: async work in a pipeline should be expressed as an observable (`FromAsync`), not as a callback.
+That way the operator decides concurrency, ordering and cancellation: in order, at most *n*, or only the latest.
 
-## ★ 6.3 `rx-to-channel` — Rx → IAsyncEnumerable: chi tiene l'arretrato
+## ★ 6.3 `rx-to-channel` — Rx → IAsyncEnumerable: who holds the backlog
 
-Un `Subject<Quote>` hot (market data che arrivano dalla callback di un socket e non si possono rallentare) produce 500.000 tick in circa 2 secondi.
-Il consumer è un `await foreach` che lavora 10 ms per elemento.
-Push contro pull, in [RxToChannelDemo.cs](RxToChannelDemo.cs): la differenza va messa in coda o scartata da qualche parte.
+A hot `Subject<Quote>` (market data that arrives from a socket callback and cannot be slowed down) produces 500,000 ticks in about 2 seconds.
+The consumer is an `await foreach` that spends 10 ms on each element.
+Push versus pull, in [RxToChannelDemo.cs](RxToChannelDemo.cs): the difference has to be queued or dropped somewhere.
 
 ```csharp
-// Market data hot: arrivano dalla callback di un socket, non si possono rallentare.
+// Hot market data: pushed from a socket callback, it cannot be slowed down.
 var ticks = new Subject<Quote>();
 // …
 stream = ticks.ToAsyncEnumerable();
@@ -278,11 +280,11 @@ ticks.ToAsyncEnumerable()  — AsyncEnumerableEx, System.Interactive.Async 7
 ✘ Unbounded hidden queue: memory grows and the consumer processes stale prices
 ```
 
-`ToAsyncEnumerable()` non può rallentare il `Subject`, perché `OnNext` è `void`: tutto quello che il consumer non ha ancora chiesto finisce in una coda interna senza limite.
-L'arretrato cresce con la produzione (quasi 500.000 elementi), lo heap di 34,5 MB in 2 secondi, e il consumer lavora su un prezzo vecchio di quasi 2 secondi.
-Nessuna eccezione e nessun contatore lo segnalano.
+`ToAsyncEnumerable()` cannot slow down the `Subject`, because `OnNext` is `void`: everything the consumer has not asked for yet ends up in an unbounded internal queue.
+The backlog grows with production (almost 500,000 elements), the heap by 34.5 MB in 2 seconds, and the consumer works on a price that is almost 2 seconds old.
+No exception and no counter reports it.
 
-La correzione mette al confine un `Channel` bounded, con una capacità e una politica scelte:
+The fix puts a bounded `Channel` at the boundary, with a capacity and a policy of your choosing:
 
 ```csharp
 var channel = Channel.CreateBounded<Quote>(
@@ -307,17 +309,17 @@ ticks → Channel.CreateBounded(8, DropOldest) → ReadAllAsync()
 ✔ Bounded buffer: the drop policy is explicit, memory is flat, prices are fresh
 ```
 
-Il consumer elabora più o meno lo stesso numero di elementi (126 contro 128): la sua velocità non cambia.
-Cambia *cosa* elabora: un prezzo di 14 ms fa invece che di 2 secondi fa, con memoria piatta e gli scarti contati da `itemDropped`.
-Errori e completamento della sorgente passano al channel con `TryComplete`.
+The consumer processes roughly the same number of elements (126 versus 128): its speed does not change.
+What changes is *what* it processes: a price from 14 ms ago instead of 2 seconds ago, with flat memory and the drops counted by `itemDropped`.
+Errors and completion of the source are passed on to the channel with `TryComplete`.
 
-Il messaggio: passare da push a pull vuol dire tenere l'arretrato da qualche parte, e conviene che sia un buffer di cui hai scelto la dimensione.
-Come in [Demo 5](../05-Channels), la politica è una decisione di business: per un prezzo conta l'ultimo, quindi `DropOldest`.
+The takeaway: going from push to pull means holding the backlog somewhere, and it had better be a buffer whose size you chose.
+As in [Demo 5](../05-Channels/README.md), the policy is a business decision: for a price, the latest one is what counts, hence `DropOldest`.
 
-## 6.4 `refreshing-cache` — cache async che si aggiorna da sola: Replay(1) + RefCount vs AutoConnect
+## 6.4 `refreshing-cache` — a self-refreshing async cache: Replay(1) + RefCount vs AutoConnect
 
-Il problema della [Demo 2](../02-AsyncCaching) (un valore, molti consumatori) in Rx, in [RefreshingCacheDemo.cs](RefreshingCacheDemo.cs).
-Una configurazione si carica in modo async (100 ms) e un timer la ricarica ogni 500 ms; 12 consumatori, uno ogni 100 ms, la leggono con `await config.FirstAsync()`.
+The problem from [Demo 2](../02-AsyncCaching/README.md) (one value, many consumers) in Rx, in [RefreshingCacheDemo.cs](RefreshingCacheDemo.cs).
+A configuration is loaded asynchronously (100 ms) and a timer reloads it every 500 ms; 12 consumers, one every 100 ms, read it with `await config.FirstAsync()`.
 
 ```csharp
 var replayed = Observable.Defer(() =>
@@ -337,10 +339,10 @@ var config = variant == Variant.Broken
 var current = await config.FirstAsync();
 ```
 
-Timer → un caricamento per tick (`FromAsync`) → `Switch` (un caricamento ancora in corso al tick successivo viene cancellato) → `Replay(1)`, che tiene l'ultima configurazione e la dà subito a chi si sottoscrive.
-`Defer` conta quante volte la sorgente viene connessa.
+Timer → one load per tick (`FromAsync`) → `Switch` (a load still running at the next tick is cancelled) → `Replay(1)`, which holds the latest configuration and hands it straight to whoever subscribes.
+`Defer` counts how many times the source gets connected.
 
-Con `RefCount()`:
+With `RefCount()`:
 
 ```text
 12 consumers, one every 100 ms; the timer refreshes every 500 ms
@@ -356,12 +358,12 @@ Con `RefCount()`:
 ✘ RefCount: every await reconnects, the replayed v1 answers first, the timer never ticks — stale forever
 ```
 
-Ogni `await` su un observable è una sottoscrizione nuova, e `FirstAsync()` dura solo fino al primo valore.
-`RefCount` connette la sorgente quando arriva il primo sottoscrittore e la disconnette quando non ne resta nessuno: qui succede a ogni chiamata, 12 connessioni.
-Dalla seconda chiamata in poi `Replay(1)` ha già v1 e risponde subito (0 ms): il consumer se ne va, la connessione cade e il timer nuovo non fa in tempo a scattare.
-Risultato: un caricamento su tre, nessuno cancellato, e la cache resta a v1 per sempre senza errori.
+Every `await` on an observable is a new subscription, and `FirstAsync()` only lasts until the first value.
+`RefCount` connects the source when the first subscriber arrives and disconnects it when none is left: here that happens on every call, 12 connections.
+From the second call on, `Replay(1)` already has v1 and answers immediately (0 ms): the consumer leaves, the connection drops, and the new timer never gets the chance to fire.
+The result: one load out of three, none cancelled, and the cache stays at v1 forever, with no errors.
 
-Con `AutoConnect(1, …)`:
+With `AutoConnect(1, …)`:
 
 ```text
    109 ms [t  7]   config load #1 completed
@@ -381,15 +383,15 @@ Con `AutoConnect(1, …)`:
 ✔ AutoConnect: one connection, refreshed by the timer, consumers get the replayed value
 ```
 
-`AutoConnect` connette al primo sottoscrittore e non disconnette più da solo: il timer gira, i caricamenti arrivano ogni 500 ms, i consumatori leggono l'ultimo valore in 0 ms.
-Il prezzo è che la connessione va chiusa a mano: la demo la riceve dal callback `c => connection = c` e alla fine chiama `connection?.Dispose()`.
+`AutoConnect` connects on the first subscriber and never disconnects on its own: the timer runs, loads arrive every 500 ms, and consumers read the latest value in 0 ms.
+The price is that the connection must be closed by hand: the demo receives it from the `c => connection = c` callback and calls `connection?.Dispose()` at the end.
 
-Il messaggio: `Replay(1).RefCount()` va bene per sottoscrittori che restano; una cache letta con `await FirstAsync()` ha solo sottoscrizioni di un istante, e `RefCount` spegne il refresh.
+The takeaway: `Replay(1).RefCount()` is fine for subscribers that stick around; a cache read with `await FirstAsync()` only has momentary subscriptions, and `RefCount` switches the refresh off.
 
-## ★ 6.5 `asyncrx-backpressure` — AsyncRx: il producer aspetta il consumer
+## ★ 6.5 `asyncrx-backpressure` — AsyncRx: the producer waits for the consumer
 
-Nel 6.2 il problema di fondo era che `OnNext` è `void`: un observer async non può far aspettare la sorgente.
-[AsyncRxBackpressureDemo.cs](AsyncRxBackpressureDemo.cs) mette lo stesso consumer (una chiamata al provider da 500 ms) su un timer da 100 ms, una volta con Rx classico e una con AsyncRx.
+In 6.2 the underlying problem was that `OnNext` is `void`: an async observer cannot make the source wait.
+[AsyncRxBackpressureDemo.cs](AsyncRxBackpressureDemo.cs) puts the same consumer (a 500 ms provider call) on a 100 ms timer, once with classic Rx and once with AsyncRx.
 
 ```csharp
 async ValueTask HandleAsync(long tick)
@@ -403,7 +405,7 @@ async ValueTask HandleAsync(long tick)
 }
 ```
 
-Rx classico, con una lambda `async void`:
+Classic Rx, with an `async void` lambda:
 
 ```csharp
 Observable.Interval(Period).Take(Ticks).Subscribe(
@@ -433,10 +435,10 @@ Observable.Interval(100 ms).Take(5).Subscribe(async x => ...)
 ✘ No backpressure and a lying OnCompleted: close the DB connection now and the handlers break
 ```
 
-Il timer va al suo passo, le chiamate si accumulano (5 in volo) e `OnCompleted` arriva a 515 ms, con il lavoro che finisce a 1028.
-Chi chiude una risorsa su `OnCompleted` la chiude sotto i piedi degli handler ancora in corso.
+The timer keeps its own pace, the calls pile up (5 in flight), and `OnCompleted` arrives at 515 ms while the work finishes at 1028.
+Anyone who closes a resource on `OnCompleted` pulls it out from under the handlers that are still running.
 
-AsyncRx, con lo stesso handler:
+AsyncRx, with the same handler:
 
 ```csharp
 await AsyncObservable.Interval(Period).Take(Ticks).SubscribeAsync(
@@ -472,18 +474,18 @@ AsyncObservable.Interval(100 ms).Take(5).SubscribeAsync(async x => ...)
 ✔ Backpressure by await: the timer slowed down to the consumer's pace, OnCompleted is honest
 ```
 
-`HandleAsync` passa così com'è: è l'`OnNextAsync` dell'observer, e restituisce un `ValueTask` che la sorgente awaita prima di emettere il valore successivo.
-Una chiamata in volo alla volta, e il tick successivo arriva circa 100 ms dopo la fine del lavoro precedente (630 → 740, 1254 → 1363): il timer si è adeguato al passo del consumer, 623 ms in media fra un tick e l'altro invece di 101.
-`OnCompletedAsync` arriva a 3112 ms, dopo l'ultimo lavoro (3111): ora dice il vero.
+`HandleAsync` is passed as is: it is the observer's `OnNextAsync`, and it returns a `ValueTask` that the source awaits before emitting the next value.
+One call in flight at a time, and the next tick arrives about 100 ms after the previous work ends (630 → 740, 1254 → 1363): the timer has adjusted to the consumer's pace, 623 ms on average between ticks instead of 101.
+`OnCompletedAsync` arrives at 3112 ms, after the last piece of work (3111): now it tells the truth.
 
-Il messaggio: in AsyncRx l'observer async fa parte del protocollo, non è una callback lanciata e dimenticata, e la backpressure è un `await`.
-Funziona perché la sorgente, un timer AsyncRx, può aspettare: il 6.6 mostra cosa succede quando non può.
+The takeaway: in AsyncRx the async observer is part of the protocol, not a fire-and-forget callback, and backpressure is an `await`.
+It works because the source, an AsyncRx timer, can wait: 6.6 shows what happens when it cannot.
 
-## ★ 6.6 `asyncrx-bridge` — AsyncRx: il confine sync → async
+## ★ 6.6 `asyncrx-bridge` — AsyncRx: the sync → async boundary
 
-AsyncRx non fa sparire la backpressure, la sposta al confine.
-In QuoteHub i prezzi arrivano da un `Subject<Quote>` di Rx classico: `OnNext` è `void`, e il producer non può awaitare niente.
-In [AsyncRxBridgeDemo.cs](AsyncRxBridgeDemo.cs) il producer spinge 5 prezzi, uno ogni 50 ms, verso un observer AsyncRx che lavora 300 ms per prezzo.
+AsyncRx does not make backpressure disappear, it moves it to the boundary.
+In QuoteHub the prices come from a classic Rx `Subject<Quote>`: `OnNext` is `void`, and the producer cannot await anything.
+In [AsyncRxBridgeDemo.cs](AsyncRxBridgeDemo.cs) the producer pushes 5 prices, one every 50 ms, to an AsyncRx observer that spends 300 ms on each price.
 
 ```csharp
 var ticks = new Subject<Quote>();
@@ -491,7 +493,7 @@ var ticks = new Subject<Quote>();
 source = ticks.ToAsyncObservable();
 // …
 await using var subscription = await source.SubscribeAsync(HandleAsync, OnError, OnCompleted);
-await Task.Delay(100); // ToAsyncObservable si sottoscrive sul task pool
+await Task.Delay(100); // ToAsyncObservable subscribes on the task pool
 
 for (var i = 0; i < Pushes; i++)
 {
@@ -519,11 +521,11 @@ ticks.ToAsyncObservable().SubscribeAsync(async q => ...)
   // REVIEW: Add a way to parameterize blocking behavior (e.g. blocking, fire-and-forget, async chaining).
 ```
 
-Ogni `OnNext` ritorna solo quando l'handler ha finito, dopo circa 310 ms: il thread del producer (`t 5`) resta fermo mentre l'handler gira su un altro (`t 9`), 1559 ms in tutto per 5 prezzi.
-Nel [sorgente di AsyncRx.NET](https://github.com/dotnet/reactive/blob/asyncrxnet-v6.0.0-alpha.18/AsyncRx.NET/System.Reactive.Async/Linq/Operators/ToAsyncObservable.cs) `ToAsyncObservable()` si sottoscrive alla sorgente classica con un `IObserver<T>` adattatore il cui `OnNext` fa `OnNextAsync(value).GetAwaiter().GetResult()`: sync-over-async.
-Sopra l'adattatore c'è il commento `REVIEW` che la demo stampa: il comportamento al confine è un punto ancora aperto della libreria.
+Each `OnNext` returns only once the handler has finished, after about 310 ms: the producer's thread (`t 5`) sits idle while the handler runs on another one (`t 9`), 1559 ms in total for 5 prices.
+In the [AsyncRx.NET source](https://github.com/dotnet/reactive/blob/asyncrxnet-v6.0.0-alpha.18/AsyncRx.NET/System.Reactive.Async/Linq/Operators/ToAsyncObservable.cs), `ToAsyncObservable()` subscribes to the classic source with an adapter `IObserver<T>` whose `OnNext` does `OnNextAsync(value).GetAwaiter().GetResult()`: sync-over-async.
+Above the adapter sits the `REVIEW` comment that the demo prints: the behavior at the boundary is still an open question in the library.
 
-La correzione è quella della Demo 5 e del 6.3: un confine esplicito, un `Channel` bounded con `DropOldest`, e dall'altra parte un `IAsyncObservable` che legge dal channel e awaita l'observer prima di passare all'elemento successivo.
+The fix is the same as in Demo 5 and 6.3: an explicit boundary, a bounded `Channel` with `DropOldest`, and on the other side an `IAsyncObservable` that reads from the channel and awaits the observer before moving on to the next element.
 
 ```csharp
 var channel = Channel.CreateBounded<Quote>(
@@ -549,7 +551,7 @@ static IAsyncObservable<T> FromChannel<T>(ChannelReader<T> reader) =>
                     await observer.OnNextAsync(item);
                 await observer.OnCompletedAsync();
             }
-            // … catch: la cancellazione chiude in silenzio, gli altri errori vanno a OnErrorAsync
+            // … catch: cancellation ends quietly, other errors go to OnErrorAsync
         });
 
         return ValueTask.FromResult(AsyncDisposable.Create(async () =>
@@ -579,26 +581,26 @@ ticks → Channel.CreateBounded(2, DropOldest) → IAsyncObservable paced by its
 ✔ The producer never waits: the boundary has a size and a drop policy you chose
 ```
 
-Il producer scrive con `TryWrite` e non aspetta mai: 1 ms in tutto.
-Il prezzo 100 va subito all'handler, 101 e 102 aspettano nel buffer da 2, poi 103 e 104 li spingono fuori: elaborati 100, 103 e 104, scartati 101 e 102, contati e loggati.
-La backpressure di AsyncRx lavora fra il channel e l'observer; la differenza con il producer la assorbe il channel, con la politica scelta.
+The producer writes with `TryWrite` and never waits: 1 ms in total.
+Price 100 goes straight to the handler, 101 and 102 wait in the 2-slot buffer, then 103 and 104 push them out: 100, 103 and 104 are processed, 101 and 102 are dropped, counted and logged.
+AsyncRx's backpressure operates between the channel and the observer; the mismatch with the producer is absorbed by the channel, with the policy you chose.
 
-Il messaggio: dentro il mondo async AsyncRx dà la backpressure con un `await`, ma al confine con una sorgente che non può aspettare qualcuno deve decidere dove va l'eccesso.
-Meglio un buffer esplicito, limitato e contato che un thread del producer bloccato.
+The takeaway: inside the async world AsyncRx gives you backpressure with an `await`, but at the boundary with a source that cannot wait, someone has to decide where the excess goes.
+An explicit, bounded, counted buffer is better than a blocked producer thread.
 
-## 6.7 `asyncrx-lifecycle` — AsyncRx: subscribe e dispose async
+## 6.7 `asyncrx-lifecycle` — AsyncRx: async subscribe and dispose
 
-Una sottoscrizione che possiede una risorsa con setup e teardown async, in [AsyncRxLifecycleDemo.cs](AsyncRxLifecycleDemo.cs): connettersi a un broker (150 ms) e, alla fine, committare gli offset e chiudere (200 ms).
-L'app si sottoscrive, legge per 300 ms, fa dispose e "si spegne".
+A subscription that owns a resource with async setup and teardown, in [AsyncRxLifecycleDemo.cs](AsyncRxLifecycleDemo.cs): connect to a broker (150 ms) and, at the end, commit the offsets and close (200 ms).
+The app subscribes, reads for 300 ms, disposes and "shuts down".
 
-Con Rx classico `Observable.Create` accetta una lambda async, ma il contratto resta sincrono:
+In classic Rx, `Observable.Create` accepts an async lambda, but the contract stays synchronous:
 
 ```csharp
 var quotes = Observable.Create<Quote>(async (observer, cancellationToken) =>
 {
     await broker.ConnectAsync(cancellationToken);
     _ = PumpAsync(q => { observer.OnNext(q); return ValueTask.CompletedTask; }, cancellationToken);
-    return () => _ = broker.CommitAndCloseAsync(); // Dispose è void: fire-and-forget
+    return () => _ = broker.CommitAndCloseAsync(); // Dispose is void: fire-and-forget
 });
 
 var subscription = quotes.Subscribe(q => Out.Log($"  quote {q.Price}"));
@@ -622,11 +624,11 @@ subscription.Dispose();
 ✘ Dispose can't be awaited: the commit outlives the subscription (or is lost on exit)
 ```
 
-`Subscribe` ritorna a 5 ms, la connessione esiste da 166 ms.
-`IDisposable.Dispose` è `void`, quindi il commit si può solo lanciare e dimenticare: `Dispose` ritorna a 307 ms, gli offset sono committati a 509.
-La demo aspetta altri 400 ms per mostrarlo; un'app che si spegne davvero il commit lo perde.
+`Subscribe` returns at 5 ms, but the connection is only up at 166 ms.
+`IDisposable.Dispose` is `void`, so the commit can only be fire-and-forget: `Dispose` returns at 307 ms, and the offsets are committed at 509.
+The demo waits another 400 ms to show it; an app that really shuts down loses the commit.
 
-AsyncRx mette setup e teardown nel tipo:
+AsyncRx puts setup and teardown into the type:
 
 ```csharp
 var quotes = AsyncObservable.Create<Quote>(async observer =>
@@ -667,27 +669,27 @@ await subscription.DisposeAsync();
 ✔ Setup and teardown are awaitable: the subscription's lifetime is the resource's lifetime
 ```
 
-`SubscribeAsync` ritorna a connessione avvenuta (158 ms, connessa a 156).
-Il teardown è un `IAsyncDisposable`: `DisposeAsync` ferma il pump, lo aspetta, committa, e ritorna solo alla fine (515 ms).
-Un dettaglio: `quote 100` arriva prima che `SubscribeAsync` ritorni, perché il pump parte dentro la funzione di subscribe; l'observer deve essere pronto prima che l'`await` completi.
+`SubscribeAsync` returns once the connection is established (158 ms, connected at 156).
+The teardown is an `IAsyncDisposable`: `DisposeAsync` stops the pump, waits for it, commits, and returns only at the very end (515 ms).
+One detail: `quote 100` arrives before `SubscribeAsync` returns, because the pump starts inside the subscribe function; the observer must be ready before the `await` completes.
 
-Il messaggio: quando una sottoscrizione possiede una risorsa con un ciclo di vita async, in AsyncRx `await SubscribeAsync` vuol dire "pronta" e `await DisposeAsync` vuol dire "chiusa".
-In Rx classico il tipo non lo permette: `IDisposable.Dispose` è `void`.
+The takeaway: when a subscription owns a resource with an async lifetime, in AsyncRx `await SubscribeAsync` means "ready" and `await DisposeAsync` means "closed".
+In classic Rx the type does not allow it: `IDisposable.Dispose` is `void`.
 
-## Cosa sapere
+## What to know
 
-- Dove stanno le conversioni in Rx/Ix 7: `IObservable<T>.ToAsyncEnumerable()` è in `System.Interactive.Async` (`System.Linq.AsyncEnumerableEx`), non in `System.Reactive` né nel `System.Linq.AsyncEnumerable` della BCL.
-- Con `runtime-async=on` le uniche state machine rimaste nell'assembly sono quelle dei lambda `async void`, cioè le lambda passate a `Subscribe` nel 6.2 e nel 6.5: Runtime Async non copre `async void` (vedi [Demo 0](../00-RuntimeAsync/README.md)).
-- `await observable` restituisce l'*ultimo* valore al completamento, solleva `InvalidOperationException` se la sequenza è vuota e non ritorna mai se è infinita. Di' quale valore vuoi: `FirstAsync()`, `LastOrDefaultAsync()`. Ogni `await` è una sottoscrizione nuova, e con `RefCount` vuol dire una connessione nuova (6.4).
-- `task.ToObservable()` adatta un `Task` già partito: un risultato condiviso, `Retry` rivede lo stesso errore, il dispose non cancella niente. `Observable.FromAsync(ct => …)` è lazy: una chiamata per sottoscrizione e token cancellato al dispose. Dove si ritenta o si cancella, `FromAsync`.
-- Lavoro async in una pipeline: niente `Subscribe(async …)` (async void: nessun limite, `OnCompleted` in anticipo, eccezioni fuori da Rx). `SelectMany(async …)` è un merge senza limite e senza ordine; l'overload `SelectMany((x, ct) => …)` aggiunge la cancellazione, non un limite. Con `Select(x => Observable.FromAsync(ct => …))` scegli la politica: `Concat()` in ordine uno alla volta, `Merge(n)` al massimo *n*, `Switch()` solo l'ultimo con le altre cancellate.
-- `Replay(1).RefCount()` disconnette quando i sottoscrittori scendono a zero, e riconnette al successivo: giusto per sottoscrittori che restano, sbagliato per una cache letta con `await FirstAsync()`. L'overload di `RefCount` con `disconnectDelay` rimanda la disconnessione, non la evita. `AutoConnect` resta connesso finché non chiudi la connessione che ti passa nel callback `Action<IDisposable>`: se non la tieni, resta aperta per sempre.
-- Da push a pull (verso `IAsyncEnumerable` o verso AsyncRx) l'arretrato sta sempre da qualche parte: `ToAsyncEnumerable()` lo mette in una coda nascosta senza limite, `ToAsyncObservable()` su una sorgente hot lo scarica sul thread del producer, bloccandolo. Un `Channel` bounded lo mette in un buffer di cui hai scelto dimensione e politica: `DropOldest` quando conta l'ultimo valore, `Wait` quando il producer può rallentare (vedi [Demo 5](../05-Channels)).
-- AsyncRx.NET è sperimentale: l'unica build su NuGet è `6.0.0-alpha.18` (2023), che funziona con Rx 7. Porta un protocollo async (backpressure con `await`, subscribe e dispose awaitabili); il confine con Rx classico (6.6) resta un problema tuo.
+- Where the conversions live in Rx/Ix 7: `IObservable<T>.ToAsyncEnumerable()` is in `System.Interactive.Async` (`System.Linq.AsyncEnumerableEx`), not in `System.Reactive`, nor in the BCL's `System.Linq.AsyncEnumerable`.
+- With `runtime-async=on` the only state machines left in the assembly are those of the `async void` lambdas, that is, the lambdas passed to `Subscribe` in 6.2 and 6.5: Runtime Async does not cover `async void` (see [Demo 0](../00-RuntimeAsync/README.md)).
+- `await observable` returns the *last* value on completion, throws `InvalidOperationException` if the sequence is empty, and never returns if it is infinite. Say which value you want: `FirstAsync()`, `LastOrDefaultAsync()`. Every `await` is a new subscription, and with `RefCount` that means a new connection (6.4).
+- `task.ToObservable()` adapts a `Task` that is already running: one shared result, `Retry` sees the same error again, disposing cancels nothing. `Observable.FromAsync(ct => …)` is lazy: one call per subscription, and the token is cancelled on dispose. Wherever you retry or cancel, use `FromAsync`.
+- Async work in a pipeline: no `Subscribe(async …)` (async void: no limit, an early `OnCompleted`, exceptions outside Rx). `SelectMany(async …)` is an unbounded, unordered merge; the `SelectMany((x, ct) => …)` overload adds cancellation, not a limit. With `Select(x => Observable.FromAsync(ct => …))` you choose the policy: `Concat()` in order, one at a time; `Merge(n)` at most *n*; `Switch()` only the latest, with the others cancelled.
+- `Replay(1).RefCount()` disconnects when the subscriber count drops to zero, and reconnects on the next one: right for subscribers that stick around, wrong for a cache read with `await FirstAsync()`. The `RefCount` overload with `disconnectDelay` postpones the disconnection, it does not prevent it. `AutoConnect` stays connected until you close the connection it hands you in the `Action<IDisposable>` callback: if you do not keep it, it stays open forever.
+- From push to pull (toward `IAsyncEnumerable` or toward AsyncRx) the backlog always lives somewhere: `ToAsyncEnumerable()` puts it in a hidden, unbounded queue, and `ToAsyncObservable()` on a hot source offloads it onto the producer's thread, blocking it. A bounded `Channel` puts it in a buffer whose size and policy you chose: `DropOldest` when the latest value is what counts, `Wait` when the producer can slow down (see [Demo 5](../05-Channels/README.md)).
+- AsyncRx.NET is experimental: the only build on NuGet is `6.0.0-alpha.18` (2023), which works with Rx 7. It brings an async protocol (backpressure via `await`, awaitable subscribe and dispose); the boundary with classic Rx (6.6) remains your problem.
 
-## Riferimenti
+## References
 
-- [dotnet/reactive — Rx.NET, Ix.NET e AsyncRx.NET](https://github.com/dotnet/reactive)
-- [Introduction to Rx.NET — Creating Observable Sequences: da `Task` a `IObservable`, `ToObservable` e `FromAsync`](https://introtorx.com/chapters/creating-observable-sequences.html)
-- [Introduction to Rx.NET — Leaving Rx's World: `await` su un `IObservable<T>`, `ToTask`](https://introtorx.com/chapters/leaving-reactive-extensions-world.html)
+- [dotnet/reactive — Rx.NET, Ix.NET and AsyncRx.NET](https://github.com/dotnet/reactive)
+- [Introduction to Rx.NET — Creating Observable Sequences: from `Task` to `IObservable`, `ToObservable` and `FromAsync`](https://introtorx.com/chapters/creating-observable-sequences.html)
+- [Introduction to Rx.NET — Leaving Rx's World: `await` on an `IObservable<T>`, `ToTask`](https://introtorx.com/chapters/leaving-reactive-extensions-world.html)
 - [Introduction to Rx.NET — Publishing Operators: `Replay`, `RefCount`, `AutoConnect`](https://introtorx.com/chapters/publishing-operators.html)

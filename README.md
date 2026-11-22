@@ -1,149 +1,151 @@
 # Beyond async/await
 
-Codice e demo della sessione deep dive **WPC 2026**: primitive asincrone in .NET, dalle macchine a stati del compilatore a Runtime Async di .NET 11, fino all'integrazione tra `Task` (awaitable) e stream Rx.NET (observable).
+**English** · [Italiano](README-it.md)
 
-> Da C# 5 a oggi, async/await è stato riscritto dal compilatore in macchine a stati.
-> Con Runtime Async di .NET 11, è il CLR a gestirlo direttamente: meno allocazioni, più veloce, IL più semplice, debug migliore.
-> Partendo da questi internals, la sessione affronta problemi e scenari reali di coordinamento e concorrenza... e come risolverli.
+Code and demos for the **WPC 2026** deep-dive session: async primitives in .NET, from compiler-generated state machines to .NET 11 Runtime Async, all the way to integrating `Task` (awaitable) with Rx.NET streams (observable).
 
-## Requisiti
+> Since C# 5, the compiler has rewritten async/await into state machines.
+> With .NET 11 Runtime Async, the CLR handles it directly: fewer allocations, faster code, simpler IL, better debugging.
+> Starting from these internals, the session tackles real-world coordination and concurrency problems and scenarios... and how to solve them.
 
-- **.NET 11 SDK** 11.0.100 o successivo (`global.json` accetta qualsiasi SDK 11.0 stabile, niente preview)
-- nessuna dipendenza esterna: il "provider di quotazioni" lento e instabile è simulato (`FakeQuoteProvider`)
+## Requirements
 
-## Come funzionano le demo
+- **.NET 11 SDK** 11.0.100 or later (`global.json` accepts any stable 11.0 SDK, no previews)
+- no external dependencies: the slow, unreliable "quote provider" is simulated (`FakeQuoteProvider`)
 
-Ogni Demo è un'app console, e quasi ogni scenario al suo interno ha una variante **broken** (il bug, in esecuzione, con un numero a schermo) e una **fixed**.
+## How the demos work
+
+Each Demo is a console app, and almost every scenario in it has a **broken** variant (the bug, running, with a number on screen) and a **fixed** one.
 
 ```bash
-dotnet run --project demos/01-TaskCompletionSource                          # menu interattivo
-dotnet run --project demos/01-TaskCompletionSource -- list                  # elenco demo
-dotnet run --project demos/01-TaskCompletionSource -- 1.1                   # broken, Invio, fixed
+dotnet run --project demos/01-TaskCompletionSource                          # interactive menu
+dotnet run --project demos/01-TaskCompletionSource -- list                  # list the demos
+dotnet run --project demos/01-TaskCompletionSource -- 1.1                   # broken, Enter, fixed
 dotnet run --project demos/01-TaskCompletionSource -- rpc-correlation --fixed
 dotnet run --project demos/01-TaskCompletionSource -- all --no-pause        # smoke test
 ```
 
-Da **Visual Studio / Rider / VS Code**: apri `BeyondAsyncAwait.slnx`, scegli il progetto della Demo (`Demo01.TaskCompletionSource`…) come startup project e lo scenario dal menu dei profili accanto al tasto di avvio. Ogni progetto ha in `Properties/launchSettings.json` un profilo `menu` (il primo, senza argomenti) e uno per scenario (`1.2 rpc-correlation`…). Da terminale lo stesso profilo si sceglie con `--launch-profile`:
+From **Visual Studio / Rider / VS Code**: open `BeyondAsyncAwait.slnx`, set the Demo's project (`Demo01.TaskCompletionSource`…) as the startup project, and pick the scenario from the profile menu next to the run button. Each project has, in `Properties/launchSettings.json`, a `menu` profile (the first one, with no arguments) and one profile per scenario (`1.2 rpc-correlation`…). From a terminal, the same profile is selected with `--launch-profile`:
 
 ```bash
 dotnet run --project demos/01-TaskCompletionSource --launch-profile "1.2 rpc-correlation"
 ```
 
-Ogni riga di log riporta millisecondi trascorsi e thread id: nelle demo async il *quando* e il *dove* sono il punto.
+Every log line shows the elapsed milliseconds and the thread id: in async demos, *when* and *where* are the whole point.
 
 ### Runtime Async on/off
 
-Tutti i progetti compilano con **Runtime Async attivo** (`<Features>runtime-async=on</Features>`, vedi [Directory.Build.targets](Directory.Build.targets)). Per confrontare con le macchine a stati del compilatore:
+Every project builds with **Runtime Async on** (`<Features>runtime-async=on</Features>`, see [Directory.Build.targets](Directory.Build.targets)). To compare with the compiler's state machines:
 
 ```bash
 dotnet run --project demos/04-AsyncContext -p:RuntimeAsync=false -- 4.1
 ```
 
-Il banner di ogni demo dice con quale modello è stato compilato l'assembly (`runtime async` / `compiler state machines`).
+Each demo's banner tells which model the assembly was built with (`runtime async` / `compiler state machines`).
 
-## Struttura
+## Layout
 
-| Cartella | Contenuto |
+| Folder | Contents |
 |---|---|
-| [src/Demo.Shared](src/Demo.Shared) | `DemoHost` (riga di comando e menu), `Out` (log con tempo e thread), `FakeQuoteProvider` |
-| [demos/00-RuntimeAsync](demos/00-RuntimeAsync) | stessi sorgenti ([Code](demos/00-RuntimeAsync/Code)) compilati in due progetti: `Classic` e `Native` |
-| [demos/01-…06-](demos) | un progetto per Demo |
-| [benchmarks](benchmarks/BeyondAsyncAwait.Benchmarks) | BenchmarkDotNet: ogni benchmark gira due volte, `StateMachine` vs `RuntimeAsync` |
+| [src/Demo.Shared](src/Demo.Shared) | `DemoHost` (command line and menu), `Out` (logging with time and thread), `FakeQuoteProvider` |
+| [demos/00-RuntimeAsync](demos/00-RuntimeAsync) | the same sources ([Code](demos/00-RuntimeAsync/Code)) built by two projects: `Classic` and `Native` |
+| [demos/01-…06-](demos) | one project per Demo |
+| [benchmarks](benchmarks/BeyondAsyncAwait.Benchmarks) | BenchmarkDotNet: every benchmark runs twice, `StateMachine` vs `RuntimeAsync` |
 
-Ogni cartella di Demo ha il suo `README.md` con la spiegazione completa: il codice del bug e del fix, l'output reale, il perché, i benchmark e i riferimenti. Questo README è l'indice.
+Each Demo folder has its full documentation, in English (`README.md`) and in Italian (`README-it.md`): the code of the bug and of the fix, the real output, the why, the benchmarks and the references. This README is the index.
 
-## Scaletta
+## Outline
 
-Scenario unico: **QuoteHub**, un gateway che chiede quotazioni a provider esterni lenti e instabili, mette in cache i dati di riferimento, parla con un message bus e pubblica stream di prezzi.
-Il filo conduttore va **dal singolo valore allo stream**: Task → TCS → AsyncLazy → ValueTask → Channel → IObservable.
+A single scenario: **QuoteHub**, a gateway that requests quotes from slow, unreliable external providers, caches reference data, talks to a message bus and publishes price streams.
+The common thread goes **from a single value to a stream**: Task → TCS → AsyncLazy → ValueTask → Channel → IObservable.
 
-★ = scenari core, gli altri sono bonus/backup.
+★ = core scenarios, the others are bonus/backup.
 
-### Demo 0 — Runtime Async: 4 promesse, 4 prove
+### Demo 0 — Runtime Async: 4 promises, 4 proofs
 
-[demos/00-RuntimeAsync](demos/00-RuntimeAsync): spiegazione, output e benchmark nel [README della Demo](demos/00-RuntimeAsync/README.md).
+[demos/00-RuntimeAsync](demos/00-RuntimeAsync): explanation, output and benchmarks in the [Demo's README](demos/00-RuntimeAsync/README.md).
 
-L'abstract promette IL più semplice, debug migliore, meno allocazioni, più velocità: ogni scenario o benchmark ne dimostra una. Gli stessi sorgenti sono compilati in due progetti, `Classic` e `Native`.
+The abstract promises simpler IL, better debugging, fewer allocations, more speed: each scenario or benchmark proves one of them. The same sources are built by two projects, `Classic` and `Native`.
 
-| Id | Nome | Cosa mostra |
+| Id | Name | What it shows |
 |---|---|---|
-| ★ 0.1 | `il` | Classic: stub + state machine con `MoveNext`. Native: nessuna state machine, il metodo è marcato `Async (0x2000)` e l'`await` diventa `call AsyncHelpers::Await`. |
-| ★ 0.2 | `stack` | Stack *live* di una catena di 3 metodi async: 19 frame contro 8. |
-| 0.3 | `elision` | `return task` dentro un `using`: `ObjectDisposedException` in entrambi i modelli. |
+| ★ 0.1 | `il` | Classic: stub + state machine with `MoveNext`. Native: no state machine, the method is flagged `Async (0x2000)` and `await` becomes `call AsyncHelpers::Await`. |
+| ★ 0.2 | `stack` | *Live* stack of a chain of 3 async methods: 19 frames versus 8. |
+| 0.3 | `elision` | `return task` inside a `using`: `ObjectDisposedException` in both models. |
 
-Benchmark: 10 await con sospensione reale passano da 1286 ns e 1204 B a 508 ns e 672 B.
+Benchmarks: 10 awaits with a real suspension go from 1286 ns and 1204 B to 508 ns and 672 B.
 
-### Demo 1 — TaskCompletionSource: il mattone
+### Demo 1 — TaskCompletionSource: the building block
 
-[demos/01-TaskCompletionSource](demos/01-TaskCompletionSource): spiegazione, codice e output nel [README della Demo](demos/01-TaskCompletionSource/README.md).
+[demos/01-TaskCompletionSource](demos/01-TaskCompletionSource): explanation, code and output in the [Demo's README](demos/01-TaskCompletionSource/README.md).
 
-| Id | Nome | Broken → Fixed |
+| Id | Name | Broken → Fixed |
 |---|---|---|
-| ★ 1.1 | `inline-continuations` | `SetResult` esegue gli handler sul read loop, dentro il suo lock: 5/5, ritardo fino a 560 ms. Con `RunContinuationsAsynchronously`: 0/5, 12 ms. |
-| ★ 1.2 | `rpc-correlation` | Request/response su un bus: 600 eccezioni nel bus, 3000 entry pendenti, heap +938 KB. Con `TrySet*`, registration disposta e `TryRemove` in `finally`: 0, 0, +0 KB. |
-| 1.3 | `manual-reset-event` | Un `Reset` ingenuo perde i waiter: 0/3 ripartono. Con `CompareExchange`: 3/3. |
+| ★ 1.1 | `inline-continuations` | `SetResult` runs the handlers on the read loop, inside its lock: 5/5, delay up to 560 ms. With `RunContinuationsAsynchronously`: 0/5, 12 ms. |
+| ★ 1.2 | `rpc-correlation` | Request/response over a bus: 600 exceptions thrown into the bus, 3000 pending entries, heap +938 KB. With `TrySet*`, the registration disposed and `TryRemove` in `finally`: 0, 0, +0 KB. |
+| 1.3 | `manual-reset-event` | A naive `Reset` loses its waiters: 0/3 resume. With `CompareExchange`: 3/3. |
 
-### Demo 2 — Un valore, molti consumatori: AsyncLazy e async caching
+### Demo 2 — One value, many consumers: AsyncLazy and async caching
 
-[demos/02-AsyncCaching](demos/02-AsyncCaching): spiegazione, codice e output nel [README della Demo](demos/02-AsyncCaching/README.md). L'`AsyncLazy<T>` finale ([AsyncLazy.cs](demos/02-AsyncCaching/AsyncLazy.cs)) risolve le tre trappole di 2.2–2.4.
+[demos/02-AsyncCaching](demos/02-AsyncCaching): explanation, code and output in the [Demo's README](demos/02-AsyncCaching/README.md). The final `AsyncLazy<T>` ([AsyncLazy.cs](demos/02-AsyncCaching/AsyncLazy.cs)) fixes the three traps of 2.2–2.4.
 
-| Id | Nome | Broken → Fixed |
+| Id | Name | Broken → Fixed |
 |---|---|---|
-| ★ 2.1 | `cache-stampede` | 200 richieste su una chiave fredda: cache del valore → 200 chiamate al provider, `GetOrAdd` sul `Task` → 16. Con `Lazy<Task<T>>`: 1. |
-| ★ 2.2 | `failure-caching` | Un `Task` fallito resta in cache: 5/5 richieste falliscono. `AsyncLazy` che si resetta sul fallimento: 1/5. |
-| ★ 2.3 | `shared-cancellation` | Il token del primo chiamante cancella il load di tutti: 0/2 serviti, e la cancellazione resta in cache. Load senza token + `WaitAsync(ct)`: 2/2. |
-| 2.4 | `factory-context` | Il load condiviso gira nel contesto del primo chiamante (correlation id `req-A`). Con `SuppressFlow`: `(none)`. |
-| 2.5 | `hybrid-cache` | `HybridCache`: stampede → 1 chiamata. Se se ne va un chiamante il load prosegue; se se ne vanno tutti viene cancellato, e non resta in cache. |
+| ★ 2.1 | `cache-stampede` | 200 requests on a cold key: caching the value → 200 provider calls, `GetOrAdd` on the `Task` → 16. With `Lazy<Task<T>>`: 1. |
+| ★ 2.2 | `failure-caching` | A failed `Task` stays in the cache: 5/5 requests fail. An `AsyncLazy` that resets on failure: 1/5. |
+| ★ 2.3 | `shared-cancellation` | The first caller's token cancels everyone's load: 0/2 served, and the cancellation stays in the cache. A load with no token + `WaitAsync(ct)`: 2/2. |
+| 2.4 | `factory-context` | The shared load runs in the first caller's context (correlation id `req-A`). With `SuppressFlow`: `(none)`. |
+| 2.5 | `hybrid-cache` | `HybridCache`: stampede → 1 call. If one caller leaves, the load goes on; if they all leave, it is cancelled and not cached. |
 
 ### Demo 3 — Hot path: ValueTask
 
-[demos/03-ValueTask](demos/03-ValueTask): spiegazione, codice, output e benchmark nel [README della Demo](demos/03-ValueTask/README.md). Da eseguire in Release: `dotnet run -c Release --project demos/03-ValueTask -- 3.1`.
+[demos/03-ValueTask](demos/03-ValueTask): explanation, code, output and benchmarks in the [Demo's README](demos/03-ValueTask/README.md). Run it in Release: `dotnet run -c Release --project demos/03-ValueTask -- 3.1`.
 
-| Id | Nome | Broken → Fixed |
+| Id | Name | Broken → Fixed |
 |---|---|---|
-| ★ 3.1 | `cache-hit` | Byte per cache hit. State machine: `Task<T>` 80, `ValueTask<T>` 0. Runtime Async: `Task<T>` awaitato direttamente **0**, 80 appena diventa un oggetto (delegate, campo, array). |
-| ★ 3.2 | `value-task-source` | `IValueTaskSource` pooled: 0 byte/operazione contro 136 di una TCS. Due await sullo stesso `ValueTask` → `InvalidOperationException`; una sorgente senza token restituisce il prezzo di AAPL come MSFT. |
+| ★ 3.1 | `cache-hit` | Bytes per cache hit. State machines: `Task<T>` 80, `ValueTask<T>` 0. Runtime Async: a `Task<T>` awaited directly **0**, 80 as soon as it becomes an object (delegate, field, array). |
+| ★ 3.2 | `value-task-source` | Pooled `IValueTaskSource`: 0 bytes/operation versus 136 for a TCS. Two awaits on the same `ValueTask` → `InvalidOperationException`; a source without a token returns AAPL's price as MSFT. |
 
-Benchmark: il pooling builder porta la sospensione a 0 B, ma fa uscire il metodo da Runtime Async: le due ottimizzazioni non si sommano.
+Benchmarks: the pooling builder brings a suspension down to 0 B, but it takes the method out of Runtime Async: the two optimizations don't add up.
 
-### Demo 4 — Contesto e ciclo di vita: AsyncLocal e IAsyncDisposable
+### Demo 4 — Context and lifetime: AsyncLocal and IAsyncDisposable
 
-[demos/04-AsyncContext](demos/04-AsyncContext): spiegazione, codice e output nel [README della Demo](demos/04-AsyncContext/README.md).
+[demos/04-AsyncContext](demos/04-AsyncContext): explanation, code and output in the [Demo's README](demos/04-AsyncContext/README.md).
 
-| Id | Nome | Broken → Fixed |
+| Id | Name | Broken → Fixed |
 |---|---|---|
-| ★ 4.1 | `asynclocal-flow` | Un `AsyncLocal` impostato in un metodo `async` non torna al chiamante: `(null)`, anche prima del primo `await`. Fixed: setter sincrono, risultato assegnato dal chiamante, holder mutabile. Identico con `-p:RuntimeAsync=false`. |
-| ★ 4.2 | `context-leak` | Il loop di background avviato nella prima richiesta si tiene il suo tenant: 4/4 righe `acme`. Con `SuppressFlow` e `UnsafeRegister`: 0/4. |
-| 4.3 | `async-dispose` | Scope DI disposto in modo sincrono → `InvalidOperationException`; `DisposeAsync` che non aspetta il flush → 20/25 allo shutdown. Con `CreateAsyncScope` e un `DisposeAsync` che aspetta: 25/25. |
+| ★ 4.1 | `asynclocal-flow` | An `AsyncLocal` set in an `async` method doesn't flow back to the caller: `(null)`, even before the first `await`. Fixed: a synchronous setter, the caller assigns the result, a mutable holder. Same with `-p:RuntimeAsync=false`. |
+| ★ 4.2 | `context-leak` | The background loop started in the first request keeps its tenant: 4/4 lines tagged `acme`. With `SuppressFlow` and `UnsafeRegister`: 0/4. |
+| 4.3 | `async-dispose` | A DI scope disposed synchronously → `InvalidOperationException`; a `DisposeAsync` that doesn't wait for the flush → 20/25 at shutdown. With `CreateAsyncScope` and a `DisposeAsync` that waits: 25/25. |
 
-### Demo 5 — Molti valori, pull: Channels
+### Demo 5 — Many values, pull: Channels
 
-[demos/05-Channels](demos/05-Channels): spiegazione, codice e output nel [README della Demo](demos/05-Channels/README.md).
+[demos/05-Channels](demos/05-Channels): explanation, code and output in the [Demo's README](demos/05-Channels/README.md).
 
-| Id | Nome | Broken → Fixed |
+| Id | Name | Broken → Fixed |
 |---|---|---|
-| ★ 5.1 | `backpressure` | Producer ~1640 tick/s, consumer 164. Unbounded: ~3700 tick in coda dopo 2,5 s, prezzo persistito vecchio di 2,2 s. Bounded `Wait`: il producer rallenta a ~200 tick/s. Bounded `DropOldest`: ~3600 scarti contati da `itemDropped`, prezzo fresco. |
-| ★ 5.2 | `pipeline` | Il primo worker che finisce chiude il canale: "completato" con 156/160 persistiti; con il provider giù la pipeline resta appesa. Fixed: completamento dopo tutti i worker, errore con `Complete(ex)`: 159 + 1 in dead letter, oppure la `ProviderException` originale in ~25 ms. |
-| 5.3 | `when-each` | `Task.WhenEach` (risultati in ordine di arrivo) e `Channel.CreateUnboundedPrioritized` (gli ordini urgenti scavalcano la coda). |
+| ★ 5.1 | `backpressure` | Producer ~1640 ticks/s, consumer 164. Unbounded: ~3700 ticks queued after 2.5 s, persisted price 2.2 s old. Bounded `Wait`: the producer slows down to ~200 ticks/s. Bounded `DropOldest`: ~3600 drops counted by `itemDropped`, fresh price. |
+| ★ 5.2 | `pipeline` | The first worker to finish closes the channel: "completed" with 156/160 persisted; with the provider down the pipeline hangs. Fixed: completion after all the workers, the error travels with `Complete(ex)`: 159 + 1 dead-lettered, or the original `ProviderException` in ~25 ms. |
+| 5.3 | `when-each` | `Task.WhenEach` (results in completion order) and `Channel.CreateUnboundedPrioritized` (urgent orders jump the queue). |
 
-### Demo 6 — Molti valori, push: Task ↔ Rx.NET, e AsyncRx
+### Demo 6 — Many values, push: Task ↔ Rx.NET, and AsyncRx
 
-[demos/06-RxInterop](demos/06-RxInterop): spiegazione, codice e output nel [README della Demo](demos/06-RxInterop/README.md).
+[demos/06-RxInterop](demos/06-RxInterop): explanation, code and output in the [Demo's README](demos/06-RxInterop/README.md).
 
-| Id | Nome | Broken → Fixed |
+| Id | Name | Broken → Fixed |
 |---|---|---|
-| ★ 6.1 | `task-observable` | `await observable` dà l'*ultimo* valore, solleva un'eccezione se vuoto, non torna se infinito → `FirstAsync()`. `task.ToObservable().Retry(3)`: 3 tentativi, **1 sola chiamata** → `Observable.FromAsync(ct => …)`: 3 chiamate, e il dispose cancella il token. |
-| ★ 6.2 | `async-in-pipeline` | `Subscribe(async …)`: 6 in volo, `OnCompleted` a ~400 ms con lavoro fino a ~670 ms; `SelectMany(async …)`: nessun limite né cancellazione. Fixed: `Select(FromAsync)` + `Concat()` / `Merge(4)` / `Switch()` (7 chiamate cancellate). |
-| ★ 6.3 | `rx-to-channel` | `ToAsyncEnumerable()` di Ix: coda nascosta senza limite (~500.000 elementi, +34 MB, prezzo vecchio di 2 s). Con un `Channel` bounded(8) `DropOldest`: backlog 7, scarti contati, prezzo fresco. |
-| 6.4 | `refreshing-cache` | `Replay(1).RefCount()` letto con `await FirstAsync()`: 12 connessioni, il timer non scatta mai, **stale per sempre**. Con `AutoConnect()`: 1 connessione, refresh dal timer. |
-| ★ 6.5 | `asyncrx-backpressure` | Rx classico: 5 in volo, `OnCompleted` prima della fine del lavoro. AsyncRx: 1 in volo, il timer rallenta al passo del consumer, `OnCompletedAsync` onesto. |
-| ★ 6.6 | `asyncrx-bridge` | `Subject<T>.ToAsyncObservable()` blocca il producer hot per ~1,5 s (sync-over-async, commento `REVIEW` nel sorgente AsyncRx). Con un `Channel` bounded `DropOldest` al confine: 1 ms. |
-| 6.7 | `asyncrx-lifecycle` | `Observable.Create` async: a fine `Subscribe` non sei connesso, a fine `Dispose` gli offset non sono committati. `AsyncObservable.Create` + `IAsyncDisposable`: setup e teardown awaitable. |
+| ★ 6.1 | `task-observable` | `await observable` gives the *last* value, throws if empty, never returns if infinite → `FirstAsync()`. `task.ToObservable().Retry(3)`: 3 attempts, **only 1 call** → `Observable.FromAsync(ct => …)`: 3 calls, and disposing cancels the token. |
+| ★ 6.2 | `async-in-pipeline` | `Subscribe(async …)`: 6 in flight, `OnCompleted` at ~400 ms with work running until ~670 ms; `SelectMany(async …)`: no limit and no cancellation. Fixed: `Select(FromAsync)` + `Concat()` / `Merge(4)` / `Switch()` (7 calls cancelled). |
+| ★ 6.3 | `rx-to-channel` | Ix's `ToAsyncEnumerable()`: a hidden unbounded queue (~500,000 items, +34 MB, price 2 s old). With a bounded(8) `DropOldest` `Channel`: backlog 7, drops counted, fresh price. |
+| 6.4 | `refreshing-cache` | `Replay(1).RefCount()` read with `await FirstAsync()`: 12 connections, the timer never fires, **stale forever**. With `AutoConnect()`: 1 connection, refreshed by the timer. |
+| ★ 6.5 | `asyncrx-backpressure` | Classic Rx: 5 in flight, `OnCompleted` before the work is done. AsyncRx: 1 in flight, the timer slows down to the consumer's pace, an honest `OnCompletedAsync`. |
+| ★ 6.6 | `asyncrx-bridge` | `Subject<T>.ToAsyncObservable()` blocks the hot producer for ~1.5 s (sync-over-async, `REVIEW` comment in the AsyncRx source). With a bounded `DropOldest` `Channel` at the boundary: 1 ms. |
+| 6.7 | `asyncrx-lifecycle` | Async `Observable.Create`: when `Subscribe` returns you aren't connected, when `Dispose` returns the offsets aren't committed. `AsyncObservable.Create` + `IAsyncDisposable`: awaitable setup and teardown. |
 
-## Note
+## Notes
 
-- **Runtime Async** in .NET 11 GA resta *opt-in* per il tuo codice: senza `<Features>runtime-async=on</Features>` il compilatore genera ancora le state machine (non serve più `EnablePreviewFeatures`). Le librerie del runtime sono già compilate così. La documentazione cita anche `<UseRuntimeAsync>false</UseRuntimeAsync>` come opt-out, ma l'SDK 11.0.100 non lo usa: in questo repo si usa `-p:RuntimeAsync=false`.
-- **AsyncRx.NET** (`System.Reactive.Async`) è sperimentale: l'unica build su NuGet è `6.0.0-alpha.18` (2023), che funziona con Rx 7.
-- **BenchmarkDotNet 0.15.x non riconosce .NET 11** (`GetRuntimeVersion not implemented for NotRecognized`): il repo usa `0.16.0-preview.2`.
-- I benchmark girano nella stessa build del harness di BenchmarkDotNet, che quindi è compilato anch'esso con o senza Runtime Async: un `Task` restituito al harness viene awaitato direttamente e con Runtime Async non viene materializzato.
-- [nuget.config](nuget.config) usa solo nuget.org, così il repo compila ovunque indipendentemente dai feed configurati sulla macchina.
+- **Runtime Async** in .NET 11 GA is still *opt-in* for your own code: without `<Features>runtime-async=on</Features>` the compiler still emits state machines (`EnablePreviewFeatures` is no longer needed). The runtime libraries are already compiled this way. The docs also mention `<UseRuntimeAsync>false</UseRuntimeAsync>` as an opt-out, but SDK 11.0.100 doesn't use it: this repo uses `-p:RuntimeAsync=false`.
+- **AsyncRx.NET** (`System.Reactive.Async`) is experimental: the only build on NuGet is `6.0.0-alpha.18` (2023), which works with Rx 7.
+- **BenchmarkDotNet 0.15.x doesn't recognize .NET 11** (`GetRuntimeVersion not implemented for NotRecognized`): the repo uses `0.16.0-preview.2`.
+- The benchmarks run in the same build as the BenchmarkDotNet harness, so the harness is also compiled with or without Runtime Async: a `Task` returned to the harness is awaited directly, and with Runtime Async it is never materialized.
+- [nuget.config](nuget.config) uses only nuget.org, so the repo builds anywhere regardless of the feeds configured on the machine.

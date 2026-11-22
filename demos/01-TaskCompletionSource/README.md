@@ -1,44 +1,46 @@
-# Demo 1 — TaskCompletionSource: il mattone
+# Demo 1 — TaskCompletionSource: the building block
 
-Un metodo `async` produce un `Task` che si completa quando il metodo finisce.
-`TaskCompletionSource<T>` (TCS) separa le due cose: il `Task` lo restituisci subito, e a completarlo ci pensa qualcun altro, quando il dato arriva.
-È il ponte tra un mondo a callback (un thread che legge da una connessione, l'handler di un message bus, un comando dell'operatore) e un chiamante che vuole solo fare `await`.
+**English** · [Italiano](README-it.md)
 
-In QuoteHub, il gateway che chiede quotazioni a provider esterni lenti e instabili, la TCS compare ogni volta che il gateway non chiama un metodo ma aspetta un messaggio: la risposta su una connessione, la reply correlata su un bus, il segnale che fa ripartire una pipeline in pausa.
-È anche il mattone con cui si costruiscono primitive di coordinamento su misura, come l'evento dello scenario 1.3.
+An `async` method produces a `Task` that completes when the method finishes.
+`TaskCompletionSource<T>` (TCS) pulls the two apart: you hand out the `Task` right away, and someone else completes it when the data arrives.
+It's the bridge between a callback-based world (a thread reading from a connection, a message bus handler, an operator command) and a caller that just wants to `await`.
 
-Chi completa la TCS lo fa sul proprio thread, magari con un lock in mano, e magari quando nessuno aspetta più.
-I tre scenari sono le tre domande da porsi ogni volta: *dove* gira il codice che aspetta (1.1), *chi* vince quando risposta e timeout arrivano insieme, e chi pulisce dopo (1.2), *quando* si può sostituire una TCS con una nuova (1.3).
-Nessuno dei tre bug arriva al chiamante come eccezione: si vedono come latenza su un thread che non è tuo, memoria che cresce round dopo round, waiter che non si svegliano più.
+In QuoteHub, the gateway that asks slow, unreliable external providers for quotes, a TCS shows up whenever the gateway doesn't call a method but waits for a message: the response on a connection, the correlated reply on a bus, the signal that resumes a paused pipeline.
+It's also the building block for custom coordination primitives, such as the event in scenario 1.3.
 
-## Come si lancia
+Whoever completes the TCS does so on their own thread, possibly while holding a lock, and possibly when nobody is waiting anymore.
+The three scenarios are the three questions to ask every time: *where* the waiting code runs (1.1), *who* wins when the reply and the timeout arrive together, and who cleans up afterwards (1.2), *when* a TCS can be replaced with a new one (1.3).
+None of the three bugs reaches the caller as an exception: they show up as latency on a thread that isn't yours, memory that grows round after round, waiters that never wake up.
+
+## How to run
 
 ```bash
-dotnet run --project demos/01-TaskCompletionSource -- 1.1                   # broken, Invio, fixed
+dotnet run --project demos/01-TaskCompletionSource -- 1.1                   # broken, Enter, fixed
 dotnet run --project demos/01-TaskCompletionSource -- rpc-correlation --fixed
-dotnet run --project demos/01-TaskCompletionSource -- all --no-pause        # tutti gli scenari, entrambe le varianti
+dotnet run --project demos/01-TaskCompletionSource -- all --no-pause        # all scenarios, both variants
 ```
 
-Da IDE ci sono i profili `menu`, `1.1 inline-continuations`, `1.2 rpc-correlation` e `1.3 manual-reset-event`.
+In an IDE, the launch profiles are `menu`, `1.1 inline-continuations`, `1.2 rpc-correlation` and `1.3 manual-reset-event`.
 
-Ogni riga di log riporta i millisecondi dall'inizio della variante e il thread id (`[t  4]`): in questa Demo il thread è quasi sempre il punto.
-Gli output qui sotto vengono da una build Debug su .NET 11.0.0; i millisecondi cambiano da una macchina all'altra.
+Every log line shows the milliseconds since the start of the variant and the thread id (`[t  4]`): in this Demo, the thread is almost always the point.
+The output below comes from a Debug build on .NET 11.0.0; the milliseconds vary from machine to machine.
 
-## ★ 1.1 `inline-continuations` — `SetResult` esegue il tuo codice sul read loop
+## ★ 1.1 `inline-continuations` — `SetResult` runs your code on the read loop
 
-Una connessione con un thread dedicato, il *read loop*, che legge i frame in arrivo e completa la richiesta pendente corrispondente ([InlineContinuationsDemo.cs](InlineContinuationsDemo.cs)).
-Cinque richieste aspettano la risposta; i frame arrivano ogni 20 ms, e ogni handler lavora 150 ms sulla risposta.
+A connection with a dedicated thread, the *read loop*, that reads incoming frames and completes the matching pending request ([InlineContinuationsDemo.cs](InlineContinuationsDemo.cs)).
+Five requests are waiting for their reply; frames arrive every 20 ms, and each handler spends 150 ms working on its reply.
 
 ```csharp
 static async Task HandleAsync(FakeConnection connection, int id, Action countOnReadLoop)
 {
     var reply = await connection.SendAsync(id);
     // …
-    // Lavoro CPU-bound sulla risposta: deserializzare, validare, mappare.
+    // CPU-bound work on the reply: deserialize, validate, map.
     Thread.Sleep(HandlerWork);
 }
 
-// Il read loop: completare dentro il lock è comune.
+// The read loop: completing inside the lock is common.
 lock (gate)
 {
     pending.Remove(id, out var tcs);
@@ -46,7 +48,7 @@ lock (gate)
 }
 ```
 
-**Broken.** La TCS è creata con `TaskCreationOptions.None`:
+**Broken.** The TCS is created with `TaskCreationOptions.None`:
 
 ```text
     35 ms [t  4] read loop: frame 1 dispatched, 6 ms after it arrived
@@ -63,12 +65,12 @@ lock (gate)
   All replies handled after        829 ms
 ```
 
-**Perché.** Con le opzioni di default `SetResult` può eseguire la continuation dell'`await` direttamente, sul thread che lo chiama, prima di restituire: qui lo fa tutte e cinque le volte.
-Il resto di `HandleAsync`, `Thread.Sleep` compreso, gira quindi sul read loop (`t 4`) e dentro il suo `lock`.
-Per 150 ms il loop non legge niente: ogni frame viene smistato circa 140 ms più tardi del precedente rispetto al suo arrivo, e il ritardo si accumula fino a 560 ms.
-Il lock poi resta preso per tutta la durata dell'handler, e `SendAsync` prende lo stesso lock per registrare una nuova richiesta: chi vuole solo inviare, da un altro thread, resta fermo anche lui.
+**Why.** With the default options, `SetResult` can run the `await` continuation directly, on the calling thread, before it returns: here it does so all five times.
+The rest of `HandleAsync`, `Thread.Sleep` included, therefore runs on the read loop (`t 4`) and inside its `lock`.
+For 150 ms the loop reads nothing: each frame waits about 140 ms longer than the previous one between arriving and being dispatched, and the delay builds up to 560 ms.
+On top of that, the lock stays held for the whole handler, and `SendAsync` takes the same lock to register a new request: anyone who just wants to send, from another thread, is stuck as well.
 
-**Fixed.** Cambia solo l'opzione con cui nasce la TCS:
+**Fixed.** The only change is the option the TCS is created with:
 
 ```csharp
 var options = variant == Variant.Broken
@@ -78,7 +80,7 @@ var options = variant == Variant.Broken
 var tcs = new TaskCompletionSource<Frame>(completionOptions);
 ```
 
-Con `RunContinuationsAsynchronously` la continuation viene eseguita in modo asincrono, su un thread del pool, e `SetResult` torna subito al loop:
+With `RunContinuationsAsynchronously` the continuation runs asynchronously, on a pool thread, and `SetResult` returns to the loop immediately:
 
 ```text
     30 ms [t  8] read loop: frame 1 dispatched, 10 ms after it arrived
@@ -93,21 +95,21 @@ Con `RunContinuationsAsynchronously` la continuation viene eseguita in modo asin
   All replies handled after        264 ms
 ```
 
-Gli handler girano in parallelo, il loop resta al passo dei frame, e il totale scende da 829 a 264 ms: l'ultimo frame a 108 ms, più i 150 ms del suo handler.
+The handlers run in parallel, the loop keeps pace with the frames, and the total drops from 829 to 264 ms: the last frame at 108 ms, plus the 150 ms of its handler.
 
-Il messaggio: chi chiama `SetResult` presta il proprio thread a codice che non conosce.
-Se quel thread è un loop di I/O, un timer o il dispatcher di un bus, o se tiene un lock, la TCS va creata con `RunContinuationsAsynchronously`.
+The takeaway: whoever calls `SetResult` lends their thread to code they know nothing about.
+If that thread is an I/O loop, a timer or a bus dispatcher, or if it holds a lock, create the TCS with `RunContinuationsAsynchronously`.
 
-## ★ 1.2 `rpc-correlation` — request/response su un message bus
+## ★ 1.2 `rpc-correlation` — request/response over a message bus
 
-QuoteHub chiede una quotazione pubblicando un messaggio su un bus, e la risposta arriva come un altro messaggio con lo stesso id ([RpcCorrelationDemo.cs](RpcCorrelationDemo.cs)).
-Il client tiene una TCS per richiesta in un dizionario indicizzato per id: l'handler delle risposte la ritrova e la completa.
+QuoteHub asks for a quote by publishing a message on a bus, and the reply comes back as another message with the same id ([RpcCorrelationDemo.cs](RpcCorrelationDemo.cs)).
+The client keeps one TCS per request in a dictionary keyed by id: the reply handler looks it up and completes it.
 
-Il `FakeBus` è deterministico: su 10 messaggi 1 va perso, 2 ricevono risposta dopo 250 ms, 7 entro 40 ms.
-Il timeout è di 100 ms, quindi le risposte lente arrivano quando il chiamante ha già rinunciato.
-Lo scenario fa 3 round da 1000 richieste concorrenti, e dopo ogni round misura l'heap con un GC completo.
+`FakeBus` is deterministic: out of every 10 messages, 1 is lost, 2 get a reply after 250 ms, 7 within 40 ms.
+The timeout is 100 ms, so the slow replies arrive after the caller has already given up.
+The scenario runs 3 rounds of 1000 concurrent requests, and measures the heap with a full GC after each round.
 
-**Broken.** La prima versione che si scrive:
+**Broken.** The version everyone writes first:
 
 ```csharp
 public Task<RpcReply> RequestAsync(string symbol, TimeSpan timeout, CancellationToken cancellationToken)
@@ -116,10 +118,10 @@ public Task<RpcReply> RequestAsync(string symbol, TimeSpan timeout, Cancellation
     var tcs = new TaskCompletionSource<RpcReply>();
     pending[id] = tcs;
 
-    // Mai disposta: resta registrata sul token della connessione, e tiene viva la tcs.
+    // Never disposed: stays registered on the connection token, keeping tcs alive.
     cancellationToken.Register(() => tcs.SetCanceled());
 
-    // Mai disposta nemmeno questa.
+    // Never disposed either.
     var timeoutCts = new CancellationTokenSource(timeout);
     timeoutCts.Token.Register(() =>
     {
@@ -131,7 +133,7 @@ public Task<RpcReply> RequestAsync(string symbol, TimeSpan timeout, Cancellation
 
 void OnReply(RpcReply reply)
 {
-    // Mai rimossa; solleva un'eccezione se il timeout ha già completato il task.
+    // Never removed; throws if the timeout already completed the task.
     if (pending.TryGetValue(reply.Id, out var tcs))
         tcs.SetResult(reply);
 }
@@ -152,13 +154,13 @@ void OnReply(RpcReply reply)
   Heap growth, round 1 → 3         +938 KB
 ```
 
-**Perché.** Tre errori diversi, che si sommano.
+**Why.** Three separate mistakes, and they add up.
 
-- **`SetResult` su una TCS già completata solleva un'eccezione.** Per ogni risposta tardiva il timeout ha già chiamato `SetCanceled`, e `SetResult` solleva `InvalidOperationException`. L'eccezione non arriva al chiamante, che ha già avuto il suo timeout: esce dall'handler ed entra nel codice del bus. Qui `FakeBus` la cattura e la conta, come farebbe una libreria client: 600 eccezioni, una per risposta tardiva. Anche il controllo `IsCompleted` prima di `SetCanceled` non protegge: tra il controllo e la chiamata la risposta può arrivare.
-- **Nessuno toglie le entry dal dizionario.** `OnReply` usa `TryGetValue` e non `TryRemove`, e nessun altro rimuove: ogni round lascia 1000 entry in più, comprese quelle completate con successo.
-- **Le registration restano attaccate al token della connessione.** `Register` restituisce una `CancellationTokenRegistration` che nessuno dispone: la lambda, e con lei la TCS, resta tra i callback del token finché la connessione vive. Anche togliendo le entry dal dizionario, la TCS resterebbe raggiungibile da lì. E la `CancellationTokenSource` del timeout non viene mai disposta.
+- **`SetResult` on an already completed TCS throws.** For every late reply the timeout has already called `SetCanceled`, so `SetResult` throws `InvalidOperationException`. The exception doesn't reach the caller, who has already had their timeout: it escapes the handler and lands in the bus code. Here `FakeBus` catches and counts it, as a client library would: 600 exceptions, one per late reply. Even the `IsCompleted` check before `SetCanceled` offers no protection: the reply can arrive between the check and the call.
+- **Nobody removes the entries from the dictionary.** `OnReply` uses `TryGetValue` rather than `TryRemove`, and nothing else removes them: every round leaves 1000 more entries behind, including the ones that completed successfully.
+- **The registrations stay attached to the connection token.** `Register` returns a `CancellationTokenRegistration` that nobody disposes: the lambda, and the TCS with it, stays among the token's callbacks for as long as the connection lives. Even if the entries were removed from the dictionary, the TCS would still be reachable from there. And the timeout's `CancellationTokenSource` is never disposed.
 
-Il risultato è un heap che cresce di 450-490 KB a round, su una connessione che in produzione vive per ore.
+The result is a heap that grows by 450-490 KB per round, on a connection that lives for hours in production.
 
 **Fixed.**
 
@@ -178,7 +180,7 @@ public async Task<RpcReply> RequestAsync(string symbol, TimeSpan timeout, Cancel
 
         bus.Publish(id, symbol);
         return await tcs.Task;
-        // Alternativa più corta per la parte di timeout: await tcs.Task.WaitAsync(timeout, cancellationToken)
+        // Shorter alternative for the timeout part: await tcs.Task.WaitAsync(timeout, cancellationToken)
     }
     finally
     {
@@ -188,7 +190,7 @@ public async Task<RpcReply> RequestAsync(string symbol, TimeSpan timeout, Cancel
 
 void OnReply(RpcReply reply)
 {
-    // Una risposta tardiva non trova niente: viene ignorata, senza sollevare eccezioni.
+    // A late reply finds nothing: it's ignored, not thrown.
     if (pending.TryRemove(reply.Id, out var tcs))
         tcs.TrySetResult(reply);
 }
@@ -208,27 +210,27 @@ void OnReply(RpcReply reply)
   Heap growth, round 1 → 3         0 KB
 ```
 
-- **`TrySetResult` e `TrySetCanceled`.** Risposta, timeout e cancellazione della connessione competono per completare la stessa TCS: vince il primo, gli altri ricevono `false` invece di un'eccezione.
-- **L'entry esce dal dizionario in due punti**: in `OnReply` con `TryRemove` quando arriva la risposta, nel `finally` in caso di timeout o cancellazione. Una risposta tardiva non trova niente e viene ignorata.
-- **Timeout e registration vivono quanto la chiamata.** La linked CTS unisce il timeout al token della connessione, e la registration sta sul suo token, non su quello della connessione; i due `using` li rilasciano entrambi a fine chiamata. La lambda è `static` e riceve la TCS come stato: nessuna closure per richiesta.
-- **`RunContinuationsAsynchronously`**, per lo stesso motivo dello scenario 1.1: `TrySetResult` gira nel codice di consegna del bus.
+- **`TrySetResult` and `TrySetCanceled`.** The reply, the timeout and the connection's cancellation race to complete the same TCS: the first one wins, the others get `false` instead of an exception.
+- **The entry leaves the dictionary in two places**: in `OnReply`, with `TryRemove`, when the reply arrives, and in the `finally` on timeout or cancellation. A late reply finds nothing and is ignored.
+- **The timeout and the registration live as long as the call.** The linked CTS combines the timeout with the connection token, and the registration sits on its token, not on the connection's; the two `using` declarations release both at the end of the call. The lambda is `static` and receives the TCS as state: no closure per request.
+- **`RunContinuationsAsynchronously`**, for the same reason as in scenario 1.1: `TrySetResult` runs inside the bus's delivery code.
 
-Per il chiamante le due versioni sono indistinguibili: 2100 risposte e 900 timeout in entrambe.
-Cambia tutto quello che resta indietro: 0 eccezioni nel bus, 0 entry pendenti, heap fermo a 449 KB.
+To the caller, the two versions are indistinguishable: 2100 replies and 900 timeouts in both.
+What changes is everything left behind: 0 exceptions in the bus, 0 pending entries, the heap flat at 449 KB.
 
-Il messaggio: una TCS ha un ciclo di vita che il compilatore non gestisce per te.
-Ogni posto in cui la registri (un dizionario, un token) ha bisogno di un'uscita in `finally`, e quando più parti possono completarla si usa `TrySet*`.
+The takeaway: a TCS has a lifecycle that the compiler doesn't manage for you.
+Every place you register it (a dictionary, a token) needs an exit in a `finally`, and when more than one party can complete it, use `TrySet*`.
 
-## 1.3 `manual-reset-event` — `Reset` senza perdere i waiter
+## 1.3 `manual-reset-event` — `Reset` without losing waiters
 
-Un evento manual-reset asincrono fa da cancello per una pipeline: `WaitAsync` aspetta che sia aperto, `Set` lo apre, `Reset` lo richiude ([ManualResetEventDemo.cs](ManualResetEventDemo.cs)).
-L'implementazione classica tiene una TCS: `WaitAsync` restituisce il suo `Task`, `Set` la completa, `Reset` la sostituisce con una nuova.
-Lo scenario: la pipeline parte in pausa con 3 worker fermi al cancello, l'operatore preme Pause (la pipeline è già in pausa), poi Resume.
+An async manual-reset event acts as a gate for a pipeline: `WaitAsync` waits for it to open, `Set` opens it, `Reset` closes it again ([ManualResetEventDemo.cs](ManualResetEventDemo.cs)).
+The classic implementation holds a TCS: `WaitAsync` returns its `Task`, `Set` completes it, `Reset` replaces it with a new one.
+The scenario: the pipeline starts paused with 3 workers held at the gate, the operator presses Pause (the pipeline is already paused), then Resume.
 
 **Broken.**
 
 ```csharp
-// Broken: Reset sostituisce sempre la TCS, anche quando nessuno l'ha ancora completata.
+// Broken: Reset always swaps the TCS, even when nobody has set it yet.
 public Task WaitAsync() => tcs.Task;
 public void Set() => tcs.TrySetResult();
 public void Reset() => tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -245,12 +247,12 @@ public void Reset() => tcs = new TaskCompletionSource(TaskCreationOptions.RunCon
   Workers resumed                  0/3
 ```
 
-**Perché.** I worker aspettano il `Task` della prima TCS.
-`Reset` la sostituisce anche se nessuno l'ha completata, e `Set` completa la nuova.
-Della vecchia l'evento non ha più il riferimento: nessuno potrà più completarla, e i suoi tre waiter restano sospesi per sempre (lo scenario smette di aspettarli dopo 500 ms).
-Nessuna eccezione e nessun thread bloccato da trovare in un dump: solo tre operazioni che non ripartono.
+**Why.** The workers are awaiting the `Task` of the first TCS.
+`Reset` replaces it even though nobody has completed it, and `Set` completes the new one.
+The event no longer holds a reference to the old one: nobody can ever complete it, and its three waiters stay suspended forever (the scenario stops waiting for them after 500 ms).
+No exception, and no blocked thread to find in a dump: just three operations that never resume.
 
-**Fixed.** `Reset` sostituisce la TCS solo se è già completata, e solo se nel frattempo nessun altro l'ha sostituita:
+**Fixed.** `Reset` replaces the TCS only if it's already completed, and only if nobody else has replaced it in the meantime:
 
 ```csharp
 public Task WaitAsync() => Volatile.Read(ref tcs).Task;
@@ -283,26 +285,26 @@ public void Reset()
   Workers resumed                  3/3
 ```
 
-Un `Reset` su un evento già chiuso non fa niente, quindi i waiter restano sulla TCS che `Set` completerà.
-Il `CompareExchange` copre la corsa tra due `Reset` concorrenti: senza, entrambi potrebbero vedere la TCS completata e installarne una nuova a testa, e chi ha chiamato `WaitAsync` tra le due sostituzioni resterebbe orfano.
-È lo stesso schema dell'`AsyncManualResetEvent` di Stephen Toub (vedi i riferimenti), con la TCS non generica di .NET 5 al posto di `TaskCompletionSource<bool>`.
+A `Reset` on an event that's already closed does nothing, so the waiters stay on the TCS that `Set` will complete.
+The `CompareExchange` covers the race between two concurrent `Reset` calls: without it, both could see the completed TCS and each install a new one, and anyone who called `WaitAsync` between the two replacements would be orphaned.
+It's the same pattern as Stephen Toub's `AsyncManualResetEvent` (see the references), with the non-generic TCS from .NET 5 in place of `TaskCompletionSource<bool>`.
 
-I tre worker riprendono su thread diversi (`t 16`, `t 20`, `t 14`) perché anche qui la TCS nasce con `RunContinuationsAsynchronously`.
-Senza, riprenderebbero uno dopo l'altro dentro la chiamata a `Set` dell'operatore, come gli handler dello scenario 1.1.
+The three workers resume on different threads (`t 16`, `t 20`, `t 14`) because here, too, the TCS is created with `RunContinuationsAsynchronously`.
+Without it, they would resume one after another inside the operator's call to `Set`, like the handlers in scenario 1.1.
 
-Il messaggio: una TCS si completa una volta sola.
-Se una primitiva la ricicla, la sostituzione va fatta solo quando è completata, e in modo atomico.
+The takeaway: a TCS completes only once.
+If a primitive recycles it, the replacement must happen only once it's completed, and atomically.
 
-## Cosa sapere
+## What to know
 
-- **Crea le TCS con `RunContinuationsAsynchronously`** quando a completarle è codice che non controlli o che tiene un lock: un read loop, un timer, l'handler di un bus. Senza, quel codice esegue le tue continuation (1.1).
-- **Usa `TrySet*` quando più parti possono completare la stessa TCS**: risposta, timeout, cancellazione, shutdown. `Set*` va bene solo se sei certo di essere l'unico, e un controllo `IsCompleted` prima non basta (1.2).
-- **Ogni registrazione ha la sua uscita.** Entry in un dizionario → `TryRemove` in `finally`; `CancellationToken.Register` → dispose della `CancellationTokenRegistration`; linked CTS → `using`. Un token che vive quanto la connessione tiene vivo tutto quello che ci registri sopra.
-- **`Task.WaitAsync(timeout, cancellationToken)`** (.NET 6+) è l'alternativa più corta a linked CTS e registration, indicata nel sorgente di 1.2. Smette di aspettare senza completare la TCS, quindi la rimozione nel `finally` serve lo stesso. La stessa API, applicata a ogni chiamante, risolve la cancellazione condivisa di [Demo 2](../02-AsyncCaching).
-- **Una TCS non si resetta.** Per riusare un segnale la si sostituisce, solo quando è completata e con `CompareExchange` (1.3). Per riusare la sorgente stessa senza allocare un `Task` a operazione c'è `IValueTaskSource` su `ManualResetValueTaskSourceCore<T>`: vedi [Demo 3](../03-ValueTask).
-- Gli output di questa pagina vengono da una build con Runtime Async attivo, il default del repo ([Directory.Build.targets](../../Directory.Build.targets)): le continuation inline dello scenario 1.1 ci sono anche lì.
+- **Create TCSs with `RunContinuationsAsynchronously`** when they're completed by code you don't control or that holds a lock: a read loop, a timer, a bus handler. Without it, that code runs your continuations (1.1).
+- **Use `TrySet*` when more than one party can complete the same TCS**: reply, timeout, cancellation, shutdown. `Set*` is fine only if you're certain you're the only one, and an `IsCompleted` check beforehand isn't enough (1.2).
+- **Every registration has its exit.** Dictionary entry → `TryRemove` in `finally`; `CancellationToken.Register` → dispose the `CancellationTokenRegistration`; linked CTS → `using`. A token that lives as long as the connection keeps alive everything you register on it.
+- **`Task.WaitAsync(timeout, cancellationToken)`** (.NET 6+) is the shorter alternative to a linked CTS and a registration, noted in the source of 1.2. It stops waiting without completing the TCS, so the removal in the `finally` is still needed. The same API, applied to each caller, solves the shared cancellation problem in [Demo 2](../02-AsyncCaching/README.md).
+- **A TCS can't be reset.** To reuse a signal you replace it, only once it's completed and with `CompareExchange` (1.3). To reuse the source itself without allocating a `Task` per operation, there's `IValueTaskSource` built on `ManualResetValueTaskSourceCore<T>`: see [Demo 3](../03-ValueTask/README.md).
+- The output on this page comes from a build with Runtime Async enabled, the repo default ([Directory.Build.targets](../../Directory.Build.targets)): the inline continuations of scenario 1.1 happen there too.
 
-## Riferimenti
+## References
 
 - [TaskCreationOptions — RunContinuationsAsynchronously](https://learn.microsoft.com/dotnet/api/system.threading.tasks.taskcreationoptions)
 - [Sergey Tepliakov — The danger of `TaskCompletionSource<T>` class](https://devblogs.microsoft.com/premier-developer/the-danger-of-taskcompletionsourcet-class/)
