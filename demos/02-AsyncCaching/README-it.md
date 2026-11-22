@@ -248,6 +248,7 @@ public Task<T> GetValueAsync(CancellationToken cancellationToken = default) =>
 ```
 
 `WaitAsync(ct)` restituisce un `Task` che completa quando completa il `Task` condiviso, oppure quando il token viene cancellato: cancellarlo interrompe l'attesa di quel chiamante, non il load.
+Come funziona dentro, e quando non basta: [approfondimento su `WaitAsync`](../../docs/wait-async-it.md).
 `web-1` smette di aspettare, il load prosegue per gli altri e completa a 200 ms, `web-4` trova il valore in cache: una sola chiamata, nessuna cancellata.
 Vale ancora la lezione di 2.1: `GetOrAdd` può costruire più `AsyncLazy`, ma il costruttore non avvia nulla.
 

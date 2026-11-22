@@ -51,6 +51,7 @@ Each demo's banner tells which model the assembly was built with (`runtime async
 | [demos/00-RuntimeAsync](demos/00-RuntimeAsync) | the same sources ([Code](demos/00-RuntimeAsync/Code)) built by two projects: `Classic` and `Native` |
 | [demos/01-…06-](demos) | one project per Demo |
 | [benchmarks](benchmarks/BeyondAsyncAwait.Benchmarks) | BenchmarkDotNet: every benchmark runs twice, `StateMachine` vs `RuntimeAsync` |
+| [docs](docs) | deep dives that span more than one Demo |
 
 Each Demo folder has its full documentation, in English (`README.md`) and in Italian (`README-it.md`): the code of the bug and of the fix, the real output, the why, the benchmarks and the references. This README is the index.
 
@@ -141,6 +142,10 @@ Benchmarks: the pooling builder brings a suspension down to 0 B, but it takes th
 | ★ 6.5 | `asyncrx-backpressure` | Classic Rx: 5 in flight, `OnCompleted` before the work is done. AsyncRx: 1 in flight, the timer slows down to the consumer's pace, an honest `OnCompletedAsync`. |
 | ★ 6.6 | `asyncrx-bridge` | `Subject<T>.ToAsyncObservable()` blocks the hot producer for ~1.5 s (sync-over-async, `REVIEW` comment in the AsyncRx source). With a bounded `DropOldest` `Channel` at the boundary: 1 ms. |
 | 6.7 | `asyncrx-lifecycle` | Async `Observable.Create`: when `Subscribe` returns you aren't connected, when `Dispose` returns the offsets aren't committed. `AsyncObservable.Create` + `IAsyncDisposable`: awaitable setup and teardown. |
+
+## Deep dives
+
+- [`Task.WaitAsync`: stop waiting without stopping the work](docs/wait-async.md): the shortcuts, how it tears itself down, and why it cancels the wait and not the work. Used in scenarios 1.2 and 2.3.
 
 ## Notes
 

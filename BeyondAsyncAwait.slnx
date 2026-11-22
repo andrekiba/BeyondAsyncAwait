@@ -9,6 +9,10 @@
     <File Path="README.md" />
     <File Path="README-it.md" />
   </Folder>
+  <Folder Name="/docs/">
+    <File Path="docs/wait-async.md" />
+    <File Path="docs/wait-async-it.md" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/Demo.Shared/Demo.Shared.csproj" />
   </Folder>
