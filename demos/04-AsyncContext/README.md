@@ -348,6 +348,8 @@ public async ValueTask DisposeAsync()
 The takeaway: a resource that closes asynchronously needs async owners all the way through the chain (`await using`, `CreateAsyncScope`, the container disposed with `DisposeAsync`) and a `DisposeAsync` that returns only when the work it shuts down has really finished.
 Implementing only `IAsyncDisposable` is legitimate when a synchronous close isn't possible, and here it also has a useful side effect: the synchronous dispose still loses the batch, but with an exception rather than silently.
 
+How `await using` works, who implements `IAsyncDisposable` and how to write one: [deep dive on `IAsyncDisposable`](../../docs/async-disposable.md).
+
 ## What to know
 
 - **`AsyncLocal` flows down, never back up.** An async method that has to produce context returns it. Context is set at the entry point of the flow, in synchronous code or before calling the async method.
@@ -355,7 +357,7 @@ Implementing only `IAsyncDisposable` is legitimate when a synchronous close isn'
 - **Context is captured by** `Task.Run`, `ThreadPool.QueueUserWorkItem`, `Timer`, `CancellationToken.Register`, and every `await` flows it to the continuation. For work that outlives the request: `ExecutionContext.SuppressFlow()` around the start, or the `Unsafe*` variants (`CancellationToken.UnsafeRegister`, `ThreadPool.UnsafeQueueUserWorkItem`).
 - **`ConfigureAwait(false)` has nothing to do with it**: it concerns the `SynchronizationContext`, not the `ExecutionContext`. There is no way, at the `await` level, to keep the `ExecutionContext` from flowing.
 - **An `IAsyncDisposable`-only type** requires all of its owners to be async: `await using`, `CreateAsyncScope()`, the `ServiceProvider` disposed with `DisposeAsync`.
-- **`DisposeAsync`** must be idempotent, wait for the work it shuts down, and not throw for a failed flush.
+- **`DisposeAsync`** must be idempotent, wait for the work it shuts down, and not throw for a failed flush. See the [deep dive on `IAsyncDisposable`](../../docs/async-disposable.md).
 - **Runtime Async changes none of this**: all three scenarios produce the same output with `-p:RuntimeAsync=false`.
 
 ## References

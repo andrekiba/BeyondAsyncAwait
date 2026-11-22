@@ -348,6 +348,8 @@ public async ValueTask DisposeAsync()
 Il messaggio: una risorsa che si chiude in modo async vuole proprietari async per tutta la catena (`await using`, `CreateAsyncScope`, il container disposto con `DisposeAsync`) e un `DisposeAsync` che torni solo quando il lavoro che chiude è davvero finito.
 Implementare solo `IAsyncDisposable` è legittimo quando una chiusura sincrona non è possibile, e qui ha anche un effetto utile: il dispose sincrono il batch lo perde comunque, ma con un'eccezione, non in silenzio.
 
+Come funziona `await using`, chi implementa `IAsyncDisposable` e come scriverne uno: [approfondimento su `IAsyncDisposable`](../../docs/async-disposable-it.md).
+
 ## Cosa sapere
 
 - **`AsyncLocal` scende, non risale.** Un metodo async che deve produrre contesto lo restituisce. Il contesto si imposta al punto d'ingresso del flusso, in codice sincrono o prima di chiamare il metodo async.
@@ -355,7 +357,7 @@ Implementare solo `IAsyncDisposable` è legittimo quando una chiusura sincrona n
 - **Catturano il contesto** `Task.Run`, `ThreadPool.QueueUserWorkItem`, `Timer`, `CancellationToken.Register`, e ogni `await` lo fa fluire alla continuation. Per il lavoro che sopravvive alla richiesta: `ExecutionContext.SuppressFlow()` intorno all'avvio, oppure le varianti `Unsafe*` (`CancellationToken.UnsafeRegister`, `ThreadPool.UnsafeQueueUserWorkItem`).
 - **`ConfigureAwait(false)` non c'entra**: riguarda il `SynchronizationContext`, non l'`ExecutionContext`. Non esiste un modo, a livello di `await`, per non far fluire l'`ExecutionContext`.
 - **Un tipo solo `IAsyncDisposable`** richiede che tutti i suoi proprietari siano async: `await using`, `CreateAsyncScope()`, il `ServiceProvider` disposto con `DisposeAsync`.
-- **`DisposeAsync`** deve essere idempotente, aspettare il lavoro che chiude e non sollevare eccezioni per un flush fallito.
+- **`DisposeAsync`** deve essere idempotente, aspettare il lavoro che chiude e non sollevare eccezioni per un flush fallito. Vedi l'[approfondimento su `IAsyncDisposable`](../../docs/async-disposable-it.md).
 - **Runtime Async non cambia nulla di tutto questo**: i tre scenari danno lo stesso output con `-p:RuntimeAsync=false`.
 
 ## Riferimenti

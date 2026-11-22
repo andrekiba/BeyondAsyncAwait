@@ -146,6 +146,7 @@ Benchmark: il pooling builder porta la sospensione a 0 B, ma fa uscire il metodo
 ## Approfondimenti
 
 - [`Task.WaitAsync`: smettere di aspettare senza fermare il lavoro](docs/wait-async-it.md): le scorciatoie, come si smonta, e perché cancella l'attesa e non il lavoro. Usato negli scenari 1.2 e 2.3.
+- [`IAsyncDisposable`: quando chiudere richiede di aspettare](docs/async-disposable-it.md): cosa diventa `await using`, chi lo implementa e cosa aspetta, come si scrive un `DisposeAsync`, e perché i proprietari devono essere async fino in cima. Usato negli scenari 1.2, 4.3, 6.6 e 6.7.
 
 ## Note
 

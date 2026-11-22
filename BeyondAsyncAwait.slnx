@@ -12,6 +12,8 @@
   <Folder Name="/docs/">
     <File Path="docs/wait-async.md" />
     <File Path="docs/wait-async-it.md" />
+    <File Path="docs/async-disposable.md" />
+    <File Path="docs/async-disposable-it.md" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/Demo.Shared/Demo.Shared.csproj" />

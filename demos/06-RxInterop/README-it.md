@@ -675,6 +675,7 @@ Un dettaglio: `quote 100` arriva prima che `SubscribeAsync` ritorni, perché il 
 
 Il messaggio: quando una sottoscrizione possiede una risorsa con un ciclo di vita async, in AsyncRx `await SubscribeAsync` vuol dire "pronta" e `await DisposeAsync` vuol dire "chiusa".
 In Rx classico il tipo non lo permette: `IDisposable.Dispose` è `void`.
+Perché un `Dispose` sincrono può solo bloccare o dimenticare: [approfondimento su `IAsyncDisposable`](../../docs/async-disposable-it.md).
 
 ## Cosa sapere
 

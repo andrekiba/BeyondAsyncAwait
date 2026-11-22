@@ -675,6 +675,7 @@ One detail: `quote 100` arrives before `SubscribeAsync` returns, because the pum
 
 The takeaway: when a subscription owns a resource with an async lifetime, in AsyncRx `await SubscribeAsync` means "ready" and `await DisposeAsync` means "closed".
 In classic Rx the type does not allow it: `IDisposable.Dispose` is `void`.
+Why a synchronous `Dispose` can only block or forget: [deep dive on `IAsyncDisposable`](../../docs/async-disposable.md).
 
 ## What to know
 
