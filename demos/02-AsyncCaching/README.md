@@ -3,7 +3,7 @@
 **English** · [Italiano](README-it.md)
 
 QuoteHub requests quotes from slow, flaky external providers, and caches reference data.
-When a key is cold and many requests arrive together, they all want the same value at the same moment: one value, many consumers.
+When a key isn't in the cache (never loaded, or just expired) and many requests arrive together, they all want the same value at the same moment: one value, many consumers.
 
 "Cache the `Task`, not the value" is the well-known answer, and it solves only the first problem.
 A cached `Task` is a shared promise: it hands every caller its outcome, even when that outcome is an error or a cancellation, and its origin, that is, the token and the context of whoever started it.
@@ -26,11 +26,11 @@ Scenario 2.5 has no broken/fixed variants: it runs only once.
 
 The provider is the [FakeQuoteProvider](../../src/Demo.Shared/FakeQuoteProvider.cs) shared by all the Demos: 200 ms of latency, `FailNext(n)` to make the next `n` calls fail, and counters of calls, cancellations and failures that each scenario prints at the end.
 Prices are deterministic (a stable hash of the symbol plus a `Random` with a fixed seed): that's why MSFT is 281.34 in every output below.
-Two helpers complete the picture: [Concurrently.cs](Concurrently.cs) starts N calls at the same instant on the thread pool, like a burst of HTTP requests on a cold key; [Caller.cs](Caller.cs) is a client with its own `CancellationTokenSource`, which can disconnect after a delay and prints `cancelled — but it never asked to!` if it gets cancelled without having asked for it.
+Two helpers complete the picture: [Concurrently.cs](Concurrently.cs) starts N calls at the same instant on the thread pool, like a burst of HTTP requests for a key that isn't cached yet; [Caller.cs](Caller.cs) is a client with its own `CancellationTokenSource`, which can disconnect after a delay and prints `cancelled — but it never asked to!` if it gets cancelled without having asked for it.
 
 The outputs below come from a Debug run on .NET 11.0.0: milliseconds and thread ids change on every run.
 
-## ★ 2.1 `cache-stampede` — 200 requests, one cold key
+## ★ 2.1 `cache-stampede` — 200 requests, one cache miss
 
 In [CacheStampedeDemo.cs](CacheStampedeDemo.cs), 200 requests ask together for `MSFT`, which isn't in the cache.
 The loader simulates the synchronous prefix that every real loader has before it gets to the I/O:
@@ -393,13 +393,13 @@ Func<CancellationToken, Task<Quote>> Get(string symbol) => ct =>
 The factory receives its own token (`token`), separate from the caller's (`ct`).
 
 ```text
-── 200 concurrent requests on a cold key
+── 200 concurrent requests on a cache miss
   Provider calls                   1
 
 ── One caller disconnects after 50 ms, two wait
-   287 ms [t 15] provider → AAPL (call #1)
+   318 ms [t 14] provider → AAPL (call #1)
 ! web-1: cancelled (client disconnected)
-   501 ms [t 13] provider ← AAPL = 192.28 (call #1)
+   531 ms [t 19] provider ← AAPL = 192.28 (call #1)
 ✔ web-2: AAPL = 192.28
 ✔ web-3: AAPL = 192.28
   Patient callers served           2/2
@@ -407,24 +407,24 @@ The factory receives its own token (`token`), separate from the caller's (`ct`).
   → one caller leaving cancels only its own wait, like AsyncLazy + WaitAsync
 
 ── Every caller disconnects (50 ms and 80 ms)
-   503 ms [t 15] provider → GOOG (call #1)
+   533 ms [t 14] provider → GOOG (call #1)
 ! web-1: cancelled (client disconnected)
 ! web-2: cancelled (client disconnected)
-   595 ms [t 15] provider ⊘ GOOG (call #1) cancelled
+   625 ms [t 14] provider ⊘ GOOG (call #1) cancelled
   Provider calls / cancelled       1 / 1
   → when the last caller leaves, HybridCache cancels the shared load (AsyncLazy lets it finish)
 
 ── A new request for the same key
-   861 ms [t 12] provider → GOOG (call #2)
-  1063 ms [t 12] provider ← GOOG = 656.25 (call #2)
+   876 ms [t 14] provider → GOOG (call #2)
+  1080 ms [t 14] provider ← GOOG = 656.25 (call #2)
 ✔ web-3: GOOG = 656.25
   Provider calls / cancelled       2 / 1
   → and the cancelled load was not cached: a new call
 ```
 
-- **Stampede**: 200 requests on a cold key, 1 provider call. That's the result of 2.1 fixed, without writing anything.
+- **Stampede**: 200 requests on a cache miss, 1 provider call. That's the result of 2.1 fixed, without writing anything.
 - **One caller leaves**: same as `AsyncLazy` with `WaitAsync`. `web-1` stops waiting, the load goes on for `web-2` and `web-3`, and no call is cancelled.
-- **Everyone leaves**: here `HybridCache` behaves differently from `AsyncLazy` and cancels the shared load. Not when the first caller leaves (50 ms), but after the last one does (80 ms): the call is cancelled at 595 ms, 92 ms after it started. The documentation puts it this way: the token passed to the factory is cancelled when all the callers waiting on the shared operation have cancelled.
+- **Everyone leaves**: here `HybridCache` behaves differently from `AsyncLazy` and cancels the shared load. Not when the first caller leaves (50 ms), but after the last one does (80 ms): the call is cancelled at 625 ms, 92 ms after it started. The documentation puts it this way: the token passed to the factory is cancelled when all the callers waiting on the shared operation have cancelled.
 - **A later request**: the cancellation wasn't cached, so `web-3` starts a new call (#2). That's the trap of 2.3, avoided.
 
 Both choices for the "everyone leaves" case are reasonable: `AsyncLazy` never throws away a call that has already started and warms the cache for whoever comes next, while `HybridCache` saves work that nobody is waiting for anymore.
@@ -437,7 +437,7 @@ The takeaway: building `AsyncLazy` by hand teaches you which questions to ask a 
 - **Decide which outcomes to keep.** To any cache of `Task`s, a failed or cancelled `Task` is as valid a value as any other. Usually only success should be kept.
 - **Shared work belongs to no caller**: no token and no `ExecutionContext` from whoever happens to come first. Each caller cancels its own wait with `WaitAsync(ct)`, available since .NET 6.
 - **`HybridCache` for data with a key and an expiration**, like QuoteHub's reference data: stampede protection, expiration, an optional distributed cache (Redis, SQL Server…), tag-based invalidation. `AsyncLazy<T>` is still useful for a single value that lives as long as its owner and never expires.
-- **`HybridCache` stampede protection is per instance**: it doesn't extend to other instances, even when they share the same distributed cache. With several servers behind a load balancer, a cold key can cost one call per server.
+- **`HybridCache` stampede protection is per instance**: it doesn't extend to other instances, even when they share the same distributed cache. With several servers behind a load balancer, a cache miss can cost one call per server.
 - **Shared instances.** `AsyncLazy<T>` gives every caller the same object, which therefore must be immutable or thread-safe. By default `HybridCache` behaves like `IDistributedCache` and doesn't reuse instances; to reuse them, the type must be `sealed` and marked `[ImmutableObject(true)]`.
 
 ## References

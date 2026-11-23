@@ -92,7 +92,7 @@ Benchmark: 10 await con sospensione reale passano da 1286 ns e 1204 B a 508 ns e
 
 | Id | Nome | Broken → Fixed |
 |---|---|---|
-| ★ 2.1 | `cache-stampede` | 200 richieste su una chiave fredda: cache del valore → 200 chiamate al provider, `GetOrAdd` sul `Task` → 16. Con `Lazy<Task<T>>`: 1. |
+| ★ 2.1 | `cache-stampede` | 200 richieste su un cache miss: cache del valore → 200 chiamate al provider, `GetOrAdd` sul `Task` → 16. Con `Lazy<Task<T>>`: 1. |
 | ★ 2.2 | `failure-caching` | Un `Task` fallito resta in cache: 5/5 richieste falliscono. `AsyncLazy` che si resetta sul fallimento: 1/5. |
 | ★ 2.3 | `shared-cancellation` | Il token del primo chiamante cancella il load di tutti: 0/2 serviti, e la cancellazione resta in cache. Load senza token + `WaitAsync(ct)`: 2/2. |
 | 2.4 | `factory-context` | Il load condiviso gira nel contesto del primo chiamante (correlation id `req-A`). Con `SuppressFlow`: `(none)`. |

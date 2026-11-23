@@ -92,7 +92,7 @@ Benchmarks: 10 awaits with a real suspension go from 1286 ns and 1204 B to 508 n
 
 | Id | Name | Broken → Fixed |
 |---|---|---|
-| ★ 2.1 | `cache-stampede` | 200 requests on a cold key: caching the value → 200 provider calls, `GetOrAdd` on the `Task` → 16. With `Lazy<Task<T>>`: 1. |
+| ★ 2.1 | `cache-stampede` | 200 requests on a cache miss: caching the value → 200 provider calls, `GetOrAdd` on the `Task` → 16. With `Lazy<Task<T>>`: 1. |
 | ★ 2.2 | `failure-caching` | A failed `Task` stays in the cache: 5/5 requests fail. An `AsyncLazy` that resets on failure: 1/5. |
 | ★ 2.3 | `shared-cancellation` | The first caller's token cancels everyone's load: 0/2 served, and the cancellation stays in the cache. A load with no token + `WaitAsync(ct)`: 2/2. |
 | 2.4 | `factory-context` | The shared load runs in the first caller's context (correlation id `req-A`). With `SuppressFlow`: `(none)`. |

@@ -4,7 +4,7 @@ using BeyondAsyncAwait.Shared;
 namespace BeyondAsyncAwait.Demo02;
 
 /// <summary>
-/// 2.1 — 200 concurrent requests for the same cold key.
+/// 2.1 — 200 concurrent requests for the same key, on a cache miss.
 /// Caching the value lets every request miss; caching the Task with GetOrAdd is better but not enough,
 /// because GetOrAdd doesn't guarantee the factory runs once. Lazy&lt;Task&lt;T&gt;&gt; does.
 /// </summary>
@@ -14,7 +14,7 @@ sealed class CacheStampedeDemo : Demo
 
     public override string Id => "2.1";
     public override string Name => "cache-stampede";
-    public override string Title => "Cache stampede: 200 requests, one cold key";
+    public override string Title => "Cache stampede: 200 requests, one cache miss";
 
     public override async Task RunAsync(Variant variant)
     {

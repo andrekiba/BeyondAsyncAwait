@@ -27,7 +27,7 @@ sealed class HybridCacheDemo : Demo
             cache.GetOrCreateAsync($"quote:{symbol}", token => new ValueTask<Quote>(provider.GetQuoteAsync(symbol, token)),
                 cancellationToken: ct).AsTask();
 
-        Out.Section("200 concurrent requests on a cold key");
+        Out.Section("200 concurrent requests on a cache miss");
         var getMsft = Get("MSFT");
         await Concurrently.RunAsync(200, () => getMsft(CancellationToken.None));
         Out.Metric("Provider calls", provider.Calls, provider.Calls == 1);

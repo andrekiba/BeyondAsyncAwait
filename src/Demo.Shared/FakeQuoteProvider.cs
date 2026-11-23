@@ -14,7 +14,7 @@ public sealed class FakeQuoteProvider
     readonly Random random = new(42);
     int calls, inFlight, maxInFlight, cancelled, failed, failNext;
 
-    public TimeSpan Latency { get; set; } = TimeSpan.FromMilliseconds(200);
+    public TimeSpan Latency { get; init; } = TimeSpan.FromMilliseconds(200);
 
     /// <summary>Probability (0..1) that a call fails with <see cref="ProviderException"/>.</summary>
     public double FailureRate { get; set; }
