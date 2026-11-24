@@ -8,6 +8,7 @@ Here the values arrive by *push*: the producer decides when, and the consumer ge
 `Task<T>` and `IObservable<T>` are the two extremes: one value you ask for and then wait on, versus a sequence of values that is delivered to you.
 In QuoteHub they live side by side: calls to the quote provider are `Task`s, published prices are an Rx stream, the configuration reloads itself on a timer, and consumers sometimes want a single price (`await`), sometimes an `IAsyncEnumerable`.
 Rx converts in both directions, but every conversion has precise semantics, and scenarios 6.1–6.4 show where they surprise you: which value `await observable` returns, what `Retry` repeats, what disposing cancels, where the backlog piles up.
+Why the two are related, and what each conversion does to timing, sharing and cancellation, is in [`Task<T>` and `IObservable<T>`](../../docs/task-observable.md).
 
 The fundamental limit of classic Rx is that `IObserver<T>.OnNext` is `void`: an observer doing async work cannot tell the producer to wait, and `Subscribe` and `Dispose` are synchronous too.
 **AsyncRx.NET** (`System.Reactive.Async`) defines `IAsyncObservable<T>` and `IAsyncObserver<T>`: `OnNextAsync` returns a `ValueTask` that the producer awaits (backpressure by construction), `SubscribeAsync` can be awaited, and the subscription is closed with `DisposeAsync`.

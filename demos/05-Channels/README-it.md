@@ -6,6 +6,7 @@ Fino a Demo 4 ogni operazione asincrona produce un valore: un `Task<T>`, una `Ta
 Qui QuoteHub riceve uno stream: tick di prezzo che arrivano più in fretta di quanto il database riesca a salvarli, e messaggi che attraversano più stadi di elaborazione.
 Un `Channel<T>` è la coda asincrona tra chi produce e chi consuma, ed è *pull*: il consumer legge quando è pronto, e quando il producer va più veloce decide il canale cosa succede.
 Demo 6 farà lo stesso viaggio in *push*, con Rx.NET.
+I due modelli a confronto, insieme a `Task<T>` e `IAsyncEnumerable<T>`, sono in [`Task<T>` e `IObservable<T>`](../../docs/task-observable-it.md).
 
 Le API si imparano in pochi minuti: `WriteAsync`, `ReadAllAsync`, `Complete`.
 Quello che conta in produzione sono le decisioni intorno: quanto può crescere la coda e cosa fare quando è piena (5.1), chi chiude un canale e come viaggia un errore tra gli stadi di una pipeline (5.2).

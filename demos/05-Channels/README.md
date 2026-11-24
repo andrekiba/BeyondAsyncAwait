@@ -6,6 +6,7 @@ Up to Demo 4, every asynchronous operation produces a single value: a `Task<T>`,
 Here QuoteHub receives a stream: price ticks that arrive faster than the database can save them, and messages that flow through several processing stages.
 A `Channel<T>` is the asynchronous queue between whoever produces and whoever consumes, and it's *pull*-based: the consumer reads when it's ready, and when the producer runs faster, the channel decides what happens.
 Demo 6 takes the same journey *push*-based, with Rx.NET.
+The two models side by side, together with `Task<T>` and `IAsyncEnumerable<T>`, are in [`Task<T>` and `IObservable<T>`](../../docs/task-observable.md).
 
 The API takes a few minutes to learn: `WriteAsync`, `ReadAllAsync`, `Complete`.
 What matters in production are the decisions around it: how far the queue may grow and what to do when it's full (5.1), who closes a channel and how an error travels between the stages of a pipeline (5.2).
