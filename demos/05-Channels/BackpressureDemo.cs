@@ -66,7 +66,7 @@ sealed class BackpressureDemo : Demo
 
         while (!cts.IsCancellationRequested)
         {
-            await Task.Delay(500);
+            await Task.Delay(500); // no token: the loop ends on its own at the deadline, and the last sample must still be printed
             Out.Log($"produced {stats.Produced,5}  persisted {stats.Persisted,4}  queued {channel.Reader.Count,5}  " +
                     $"dropped {stats.Dropped,5}  staleness {stats.StalenessMs,5} ms  memory +{LiveMegaBytes(baselineMemory):0.0} MB");
         }
