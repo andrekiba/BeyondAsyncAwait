@@ -142,7 +142,7 @@ static async Task RequestAsync(string tenant, PriceRefresher refresher, Cancella
 {
     Tenant.Value = tenant;
     refresher.EnsureStarted(shutdown);
-    await Task.Delay(50);
+    await Task.Delay(50, shutdown);
     Out.Log($"[tenant={Tenant.Value}] request: served quotes");
 }
 
@@ -169,13 +169,13 @@ shutdown.Register(() => Background("flushing subscriptions on shutdown"));
 ```
 
 ```text
-    62 ms [t  4] [tenant=acme] request: served quotes
-   124 ms [t  4] [tenant=initech] request: served quotes
-   125 ms [t  6] [tenant=globex] request: served quotes
+    61 ms [t  7] [tenant=acme] request: served quotes
+   123 ms [t  7] [tenant=initech] request: served quotes
+   123 ms [t  8] [tenant=globex] request: served quotes
 ✘ [tenant=acme] background: refreshing price cache
 ✘ [tenant=acme] background: refreshing price cache
 ✘ [tenant=acme] background: refreshing price cache
-   536 ms [t  6] application stopping
+   531 ms [t  7] application stopping
 ✘ [tenant=acme] background: flushing subscriptions on shutdown
   Background lines tagged 'acme'   4/4
 ```
@@ -209,14 +209,14 @@ if (suppressFlow)
 - The token passed to `Task.Run` is something else: `stop.Token`, the one the loop observes, and it only matters if it's cancelled before the loop starts. `Task.Run` registers on it with `UnsafeRegister`, so it doesn't capture the context, in either variant.
 
 ```text
-    60 ms [t  4] [tenant=acme] request: served quotes
-   122 ms [t  4] [tenant=initech] request: served quotes
+    58 ms [t  7] [tenant=acme] request: served quotes
    122 ms [t  8] [tenant=globex] request: served quotes
-   155 ms [t  8] [tenant=(null)] background: refreshing price cache
-   311 ms [t  8] [tenant=(null)] background: refreshing price cache
-   468 ms [t  8] [tenant=(null)] background: refreshing price cache
-   532 ms [t  8] application stopping
-   532 ms [t  8] [tenant=(null)] background: flushing subscriptions on shutdown
+   122 ms [t  7] [tenant=initech] request: served quotes
+   153 ms [t  7] [tenant=(null)] background: refreshing price cache
+   310 ms [t  7] [tenant=(null)] background: refreshing price cache
+   463 ms [t  7] [tenant=(null)] background: refreshing price cache
+   526 ms [t  8] application stopping
+   527 ms [t  7] [tenant=(null)] background: flushing subscriptions on shutdown
   Background lines tagged 'acme'   0/4
 ```
 
@@ -234,6 +234,7 @@ Whatever is left in the buffer has to be written on shutdown, and writing is I/O
 async Task LoopAsync()
 {
     var batch = new List<Quote>(BatchSize);
+    // No token: the loop ends when the input is completed, so that DisposeAsync can drain the buffer.
     await foreach (var quote in input.Reader.ReadAllAsync())
     {
         batch.Add(quote);

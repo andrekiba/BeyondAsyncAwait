@@ -140,15 +140,16 @@ Each variant runs two scenarios:
 **Broken.** Each stage fires off its workers and forgets about them:
 
 ```csharp
-// Broken: looks reasonable in a code review.
-static void StartStageBroken<TIn, TOut>(ChannelReader<TIn> input, ChannelWriter<TOut> output, Func<TIn, CancellationToken, Task<TOut>> transform)
+// Broken: looks reasonable in a code review, cancellation included.
+static void StartStageBroken<TIn, TOut>(ChannelReader<TIn> input, ChannelWriter<TOut> output,
+    Func<TIn, CancellationToken, Task<TOut>> transform, CancellationToken cancellationToken)
 {
     for (var i = 0; i < Workers; i++)
     {
         _ = Task.Run(async () =>                         // fire-and-forget: a failing worker dies in silence
         {
-            await foreach (var item in input.ReadAllAsync())
-                await output.WriteAsync(await transform(item, CancellationToken.None));
+            await foreach (var item in input.ReadAllAsync(cancellationToken))
+                await output.WriteAsync(await transform(item, cancellationToken), cancellationToken);
 
             output.Complete();                           // the FIRST worker to finish closes the channel for all the others
         });
@@ -156,11 +157,13 @@ static void StartStageBroken<TIn, TOut>(ChannelReader<TIn> input, ChannelWriter<
 }
 ```
 
+The cancellation token is there, passed to `ReadAllAsync`, `WriteAsync` and the transform just as in the fixed variant, but nobody ever cancels it: what's missing is a stage that owns its workers.
+
 Scenario 1, the poison message:
 
 ```text
 ── Scenario 1: a poison message, then a normal end of input
-✔ Caller: pipeline completed in 1237 ms
+✔ Caller: pipeline completed in 1228 ms
   Produced                         160
   Persisted                        156
   Dead-lettered                    0
@@ -179,7 +182,7 @@ Scenario 2, the provider down:
 
 ```text
 ── Scenario 2: the quote provider goes down
-✘ Caller: no completion after 3008 ms — the pipeline hangs (and its blocked tasks leak)
+✘ Caller: no completion after 3015 ms — the pipeline hangs (and its blocked tasks leak)
   Produced                         48
   Persisted                        0
   Dead-lettered                    0
@@ -260,13 +263,13 @@ public void Fail(string stage, Exception error)
 ```
 
 **What happens to the other workers.** The first real error wins (`CompareExchange`) and cancels the token that every stage passes to `ReadAllAsync`, `WriteAsync` and the transform.
-The other workers, upstream and downstream, exit through cancellation: even those blocked on a full channel, which in the broken variant stayed there forever.
+The other workers, upstream and downstream, exit through cancellation: even those blocked on a full channel, which in the broken variant, where nobody cancels the token, stayed there forever.
 `Fail` ignores `OperationCanceledException`, so the recorded cause remains the `ProviderException`, not the cancellation that follows from it.
 Once its workers have exited, each stage completes its output with `context.FirstError`: the error travels downstream with the channel, and the caller gets the original exception from its `await foreach`.
 
 ```text
 ── Scenario 1: a poison message, then a normal end of input
-✔ Caller: pipeline completed in 1256 ms
+✔ Caller: pipeline completed in 1260 ms
   Stage tasks still running        0
   Produced                         160
   Persisted                        159
@@ -275,8 +278,8 @@ Once its workers have exited, each stage completes its output with `context.Firs
   Exceptions nobody observed       0
 
 ── Scenario 2: the quote provider goes down
-✔ Caller: pipeline failed in 25 ms with ProviderException: Provider failed for MSFT (call #3)
-  root cause, from stage 'enrich': ProviderException: Provider failed for MSFT (call #3)
+✔ Caller: pipeline failed in 27 ms with ProviderException: Provider failed for AAPL (call #4)
+  root cause, from stage 'enrich': ProviderException: Provider failed for AAPL (call #4)
   Stage tasks still running        0
   Produced                         48
   Persisted                        0
@@ -285,7 +288,7 @@ Once its workers have exited, each stage completes its output with `context.Firs
 ```
 
 In the first scenario #100 is dead-lettered and the other 159 reach the database, in about the same time as the broken variant.
-In the second, the pipeline fails in 25 ms instead of hanging, and the caller knows what happened and in which stage.
+In the second, the pipeline fails in 27 ms instead of hanging, and the caller knows what happened and in which stage.
 In both, no task is left running and no exception is lost: every worker is awaited by its stage, and every stage turns its own error into the completion of its channel.
 
 **Channel options.** Before the scenarios, the program prints:

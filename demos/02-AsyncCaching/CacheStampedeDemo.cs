@@ -63,6 +63,6 @@ sealed class CacheStampedeDemo : Demo
     static Task<Quote> LoadAsync(FakeQuoteProvider provider, string symbol)
     {
         Thread.Sleep(5);
-        return provider.GetQuoteAsync(symbol);
+        return provider.GetQuoteAsync(symbol); // no token: the load is shared, it belongs to no caller (2.3)
     }
 }

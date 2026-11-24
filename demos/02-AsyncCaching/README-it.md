@@ -41,7 +41,7 @@ Il loader simula il prefisso sincrono che ogni loader reale ha prima di arrivare
 static Task<Quote> LoadAsync(FakeQuoteProvider provider, string symbol)
 {
     Thread.Sleep(5);
-    return provider.GetQuoteAsync(symbol);
+    return provider.GetQuoteAsync(symbol); // nessun token: il caricamento è condiviso, non appartiene a nessun chiamante (2.3)
 }
 ```
 

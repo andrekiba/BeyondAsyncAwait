@@ -91,9 +91,9 @@ sealed class PipelineDemo : Demo
         Task[] stages;
         if (variant == Variant.Broken)
         {
-            StartStageBroken(raw.Reader, trades.Writer, parse);
-            StartStageBroken(trades.Reader, priced.Writer, enrich);
-            StartStageBroken(priced.Reader, receipts.Writer, persist);
+            StartStageBroken(raw.Reader, trades.Writer, parse, context.Token);
+            StartStageBroken(trades.Reader, priced.Writer, enrich, context.Token);
+            StartStageBroken(priced.Reader, receipts.Writer, persist, context.Token);
             stages = [source];
         }
         else
@@ -107,7 +107,8 @@ sealed class PipelineDemo : Demo
             ];
         }
 
-        // The caller: reads the receipts until the last channel completes.
+        // The caller: reads the receipts until the last channel completes. No pipeline token here:
+        // a failure must reach it as the root cause, through Complete(ex), not as a cancellation.
         var stopwatch = Stopwatch.StartNew();
         var confirmed = 0;
         var consume = Task.Run(async () =>
@@ -156,15 +157,16 @@ sealed class PipelineDemo : Demo
         Out.Metric("Exceptions nobody observed", unobserved, unobserved == 0);
     }
 
-    // Broken: looks reasonable in a code review.
-    static void StartStageBroken<TIn, TOut>(ChannelReader<TIn> input, ChannelWriter<TOut> output, Func<TIn, CancellationToken, Task<TOut>> transform)
+    // Broken: looks reasonable in a code review, cancellation included.
+    static void StartStageBroken<TIn, TOut>(ChannelReader<TIn> input, ChannelWriter<TOut> output,
+        Func<TIn, CancellationToken, Task<TOut>> transform, CancellationToken cancellationToken)
     {
         for (var i = 0; i < Workers; i++)
         {
             _ = Task.Run(async () =>                         // fire-and-forget: a failing worker dies in silence
             {
-                await foreach (var item in input.ReadAllAsync())
-                    await output.WriteAsync(await transform(item, CancellationToken.None));
+                await foreach (var item in input.ReadAllAsync(cancellationToken))
+                    await output.WriteAsync(await transform(item, cancellationToken), cancellationToken);
 
                 output.Complete();                           // the FIRST worker to finish closes the channel for all the others
             });

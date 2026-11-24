@@ -50,6 +50,7 @@ sealed class BatchingPublisher : IAsyncDisposable
     async Task LoopAsync()
     {
         var batch = new List<Quote>(BatchSize);
+        // No token: the loop ends when the input is completed, so that DisposeAsync can drain the buffer.
         await foreach (var quote in input.Reader.ReadAllAsync())
         {
             batch.Add(quote);
@@ -64,7 +65,7 @@ sealed class BatchingPublisher : IAsyncDisposable
 
     async Task FlushAsync(List<Quote> batch)
     {
-        await Task.Delay(50); // the downstream write
+        await Task.Delay(50); // the downstream write: no token, the last flush must not be cut short
         Interlocked.Add(ref published, batch.Count);
         Out.Log($"publisher: flushed a batch of {batch.Count}");
         batch.Clear();

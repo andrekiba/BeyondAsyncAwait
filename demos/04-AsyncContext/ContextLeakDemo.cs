@@ -28,7 +28,7 @@ sealed class ContextLeakDemo : Demo
             RequestAsync("globex", refresher, shutdown.Token),
             RequestAsync("initech", refresher, shutdown.Token));
 
-        await Task.Delay(400);
+        await Task.Delay(400, shutdown.Token);
         Out.Log("application stopping");
         await shutdown.CancelAsync();
         await refresher.StopAsync();
@@ -40,7 +40,7 @@ sealed class ContextLeakDemo : Demo
     {
         Tenant.Value = tenant;
         refresher.EnsureStarted(shutdown);
-        await Task.Delay(50);
+        await Task.Delay(50, shutdown);
         Out.Log($"[tenant={Tenant.Value}] request: served quotes");
     }
 
