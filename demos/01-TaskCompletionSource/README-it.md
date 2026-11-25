@@ -8,6 +8,7 @@ Un metodo `async` produce un `Task` che si completa quando il metodo finisce.
 
 In QuoteHub, il gateway che chiede quotazioni a provider esterni lenti e instabili, la TCS compare ogni volta che il gateway non chiama un metodo ma aspetta un messaggio: la risposta su una connessione, la reply correlata su un bus, il segnale che fa ripartire una pipeline in pausa.
 È anche il mattone con cui si costruiscono primitive di coordinamento su misura, come l'evento dello scenario 1.3.
+Le basi (cos'è una TCS, la sua API, i pattern in cui si usa) sono nell'[approfondimento su `TaskCompletionSource`](../../docs/task-completion-source-it.md); questa Demo parla delle trappole.
 
 Chi completa la TCS lo fa sul proprio thread, magari con un lock in mano, e magari quando nessuno aspetta più.
 I tre scenari sono le tre domande da porsi ogni volta: *dove* gira il codice che aspetta (1.1), *chi* vince quando risposta e timeout arrivano insieme, e chi pulisce dopo (1.2), *quando* si può sostituire una TCS con una nuova (1.3).

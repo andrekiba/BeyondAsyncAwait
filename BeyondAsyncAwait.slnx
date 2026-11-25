@@ -10,6 +10,8 @@
     <File Path="README-it.md" />
   </Folder>
   <Folder Name="/docs/">
+    <File Path="docs/task-completion-source.md" />
+    <File Path="docs/task-completion-source-it.md" />
     <File Path="docs/wait-async.md" />
     <File Path="docs/wait-async-it.md" />
     <File Path="docs/async-disposable.md" />

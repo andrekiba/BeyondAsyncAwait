@@ -8,6 +8,7 @@ It's the bridge between a callback-based world (a thread reading from a connecti
 
 In QuoteHub, the gateway that asks slow, unreliable external providers for quotes, a TCS shows up whenever the gateway doesn't call a method but waits for a message: the response on a connection, the correlated reply on a bus, the signal that resumes a paused pipeline.
 It's also the building block for custom coordination primitives, such as the event in scenario 1.3.
+The basics (what a TCS is, its API, the patterns it's used for) are in the [deep dive on `TaskCompletionSource`](../../docs/task-completion-source.md); this Demo is about the traps.
 
 Whoever completes the TCS does so on their own thread, possibly while holding a lock, and possibly when nobody is waiting anymore.
 The three scenarios are the three questions to ask every time: *where* the waiting code runs (1.1), *who* wins when the reply and the timeout arrive together, and who cleans up afterwards (1.2), *when* a TCS can be replaced with a new one (1.3).

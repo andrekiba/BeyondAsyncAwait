@@ -145,6 +145,7 @@ Benchmark: il pooling builder porta la sospensione a 0 B, ma fa uscire il metodo
 
 ## Approfondimenti
 
+- [`TaskCompletionSource`: un `Task` che completi tu](docs/task-completion-source-it.md): delegate task e promise task, l'API e i suoi tre stati finali, i pattern (callback, evento, segnale, richiesta/risposta), e quando usare altro. Fa da base a Demo 1, usata nelle Demo 2, 3 e 6.
 - [`Task.WaitAsync`: smettere di aspettare senza fermare il lavoro](docs/wait-async-it.md): le scorciatoie, come si smonta, e perché cancella l'attesa e non il lavoro. Usato negli scenari 1.2 e 2.3.
 - [`IAsyncDisposable`: quando chiudere richiede di aspettare](docs/async-disposable-it.md): cosa diventa `await using`, chi lo implementa e cosa aspetta, come si scrive un `DisposeAsync`, e perché i proprietari devono essere async fino in cima. Usato negli scenari 1.2, 4.3, 6.6 e 6.7.
 - [`Task<T>` e `IObservable<T>`: un valore o molti, pull o push](docs/task-observable-it.md): la mappa dei tipi async, perché `IObservable<T>` è il duale di `IEnumerable<T>` e `Task<T>` un observable con un solo valore, dove sono diversi, e cosa fa davvero ogni conversione. Fa da sfondo alle Demo 5 e 6.
