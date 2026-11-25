@@ -385,7 +385,7 @@ Con `AutoConnect(1, …)`:
 ```
 
 `AutoConnect` connette al primo sottoscrittore e non disconnette più da solo: il timer gira, i caricamenti arrivano ogni 500 ms, i consumatori leggono l'ultimo valore in 0 ms.
-Il prezzo è che la connessione va chiusa a mano: la demo la riceve dal callback `c => connection = c` e alla fine chiama `connection?.Dispose()`.
+Il prezzo è che la connessione va chiusa a mano: la demo la riceve dalla callback `c => connection = c` e alla fine chiama `connection?.Dispose()`.
 
 Il messaggio: `Replay(1).RefCount()` va bene per sottoscrittori che restano; una cache letta con `await FirstAsync()` ha solo sottoscrizioni di un istante, e `RefCount` spegne il refresh.
 
@@ -685,7 +685,7 @@ Perché un `Dispose` sincrono può solo bloccare o dimenticare: [approfondimento
 - `await observable` restituisce l'*ultimo* valore al completamento, solleva `InvalidOperationException` se la sequenza è vuota e non ritorna mai se è infinita. Di' quale valore vuoi: `FirstAsync()`, `LastOrDefaultAsync()`. Ogni `await` è una sottoscrizione nuova, e con `RefCount` vuol dire una connessione nuova (6.4).
 - `task.ToObservable()` adatta un `Task` già partito: un risultato condiviso, `Retry` rivede lo stesso errore, il dispose non cancella niente. `Observable.FromAsync(ct => …)` è lazy: una chiamata per sottoscrizione e token cancellato al dispose. Dove si ritenta o si cancella, `FromAsync`.
 - Lavoro async in una pipeline: niente `Subscribe(async …)` (async void: nessun limite, `OnCompleted` in anticipo, eccezioni fuori da Rx). `SelectMany(async …)` è un merge senza limite e senza ordine; l'overload `SelectMany((x, ct) => …)` aggiunge la cancellazione, non un limite. Con `Select(x => Observable.FromAsync(ct => …))` scegli la politica: `Concat()` in ordine uno alla volta, `Merge(n)` al massimo *n*, `Switch()` solo l'ultimo con le altre cancellate.
-- `Replay(1).RefCount()` disconnette quando i sottoscrittori scendono a zero, e riconnette al successivo: giusto per sottoscrittori che restano, sbagliato per una cache letta con `await FirstAsync()`. L'overload di `RefCount` con `disconnectDelay` rimanda la disconnessione, non la evita. `AutoConnect` resta connesso finché non chiudi la connessione che ti passa nel callback `Action<IDisposable>`: se non la tieni, resta aperta per sempre.
+- `Replay(1).RefCount()` disconnette quando i sottoscrittori scendono a zero, e riconnette al successivo: giusto per sottoscrittori che restano, sbagliato per una cache letta con `await FirstAsync()`. L'overload di `RefCount` con `disconnectDelay` rimanda la disconnessione, non la evita. `AutoConnect` resta connesso finché non chiudi la connessione che ti passa nella callback `Action<IDisposable>`: se non la tieni, resta aperta per sempre.
 - Da push a pull (verso `IAsyncEnumerable` o verso AsyncRx) l'arretrato sta sempre da qualche parte: `ToAsyncEnumerable()` lo mette in una coda nascosta senza limite, `ToAsyncObservable()` su una sorgente hot lo scarica sul thread del producer, bloccandolo. Un `Channel` bounded lo mette in un buffer di cui hai scelto dimensione e politica: `DropOldest` quando conta l'ultimo valore, `Wait` quando il producer può rallentare (vedi [Demo 5](../05-Channels/README-it.md)).
 - AsyncRx.NET è sperimentale: l'unica build su NuGet è `6.0.0-alpha.18` (2023), che funziona con Rx 7. Porta un protocollo async (backpressure con `await`, subscribe e dispose awaitabili); il confine con Rx classico (6.6) resta un problema tuo.
 

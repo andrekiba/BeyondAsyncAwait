@@ -178,7 +178,7 @@ Risultati **indicativi** (`--quick`, i7-11800H, .NET 11.0.0): rifalli sulla macc
 - **Con sospensione**: con le state machine ogni livello sospeso porta sull'heap la propria state machine, dentro un box che è anche il suo `Task`. Con Runtime Async sospensione e ripresa le gestisce il runtime: la stessa catena alloca circa la metà e impiega meno della metà del tempo.
 - **Elision**: con le state machine faceva risparmiare circa il 20% del tempo, con Runtime Async meno del 10%. Restano solo le trappole dello scenario 0.3.
 
-Il harness di BenchmarkDotNet è compilato con lo stesso `RuntimeAsync` del codice misurato: un `Task` che il harness awaita direttamente viene trattato come nel codice reale.
+L'harness di BenchmarkDotNet è compilato con lo stesso `RuntimeAsync` del codice misurato: un `Task` che l'harness awaita direttamente viene trattato come nel codice reale.
 
 ## Cosa sapere prima di usarlo
 

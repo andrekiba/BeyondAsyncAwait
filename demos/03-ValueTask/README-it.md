@@ -3,7 +3,7 @@
 [English](README.md) · **Italiano**
 
 Nel gateway QuoteHub i prezzi stanno in una cache davanti al provider lento.
-Quando il prezzo c'è, il metodo async ritorna senza mai sospendere: è il hot path, la chiamata che il gateway ripete di continuo.
+Quando il prezzo c'è, il metodo async ritorna senza mai sospendere: è l'hot path, la chiamata che il gateway ripete di continuo.
 Con le state machine del compilatore anche questo ritorno sincrono ha un costo: un `async Task<decimal>` deve consegnare il risultato dentro un `Task`, e per un prezzo ne alloca uno nuovo a ogni chiamata.
 `ValueTask<T>` esiste per questo: è una struct che contiene il risultato quando è già pronto, e un `Task<T>` o una `IValueTaskSource<T>` quando non lo è.
 
@@ -130,7 +130,7 @@ L'output è identico nei due modelli:
 | `Task<T>`, tenuto in un array | 80 | 80 |
 | `ValueTask<T>`, tutti e tre i casi | 0 | 0 |
 
-Con Runtime Async l'argomento classico, `ValueTask` sul hot path, si ridimensiona: un `Task<T>` awaitato subito non alloca più.
+Con Runtime Async l'argomento classico, `ValueTask` sull'hot path, si ridimensiona: un `Task<T>` awaitato subito non alloca più.
 `ValueTask<T>` resta decisivo quando il risultato diventa un oggetto prima di essere awaitato, e nel codice compilato senza Runtime Async.
 
 ## ★ 3.2 `value-task-source` — zero allocazioni, un solo await
@@ -325,8 +325,8 @@ Risultati **indicativi** (`--quick`, i7-11800H, .NET 11.0.0): rifalli sulla tua 
 - **`Task` in un campo**: 80 B in entrambi i job, con tempi simili. Quando il `Task` deve esistere come oggetto Runtime Async non lo può evitare: è la riga "kept as an object" dello scenario 3.1.
 - **Sospensione**: quando il metodo sospende davvero il risultato inline non serve, e con le state machine `ValueTask<T>` alloca 104 B. Il pooling builder riusa i box delle state machine e scende a 0 B. Nel job RuntimeAsync le due righe si allineano a 104 B: i metodi con `PoolingAsyncValueTaskMethodBuilder` escono da Runtime Async, e il vantaggio del pooling non si vede più. Runtime Async è più veloce in entrambi i casi, ma le due ottimizzazioni non si sommano.
 
-Il harness di BenchmarkDotNet è compilato con lo stesso `RuntimeAsync` del codice misurato: per questo `Hit_Task_Materialized` tiene il `Task` in un campo.
-Restituirlo e basta non servirebbe: il harness lo awaiterebbe direttamente, e con Runtime Async il `Task` non verrebbe materializzato.
+L'harness di BenchmarkDotNet è compilato con lo stesso `RuntimeAsync` del codice misurato: per questo `Hit_Task_Materialized` tiene il `Task` in un campo.
+Restituirlo e basta non servirebbe: l'harness lo awaiterebbe direttamente, e con Runtime Async il `Task` non verrebbe materializzato.
 
 ## Cosa sapere prima di usare ValueTask
 

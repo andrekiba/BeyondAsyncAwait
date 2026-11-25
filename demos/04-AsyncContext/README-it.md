@@ -135,7 +135,7 @@ Il messaggio: `AsyncLocal` scende, non risale. Se un metodo async deve produrre 
 ## ★ 4.2 `context-leak` — il background si tiene il tenant della prima richiesta
 
 `PriceRefresher` ([ContextLeakDemo.cs](ContextLeakDemo.cs)) è un singleton con un loop che rinfresca la cache dei prezzi ogni 150 ms.
-Parte in modo lazy, dentro la prima richiesta che ne ha bisogno: `EnsureStarted` avvia il loop e registra sul token di shutdown un callback che svuota le sottoscrizioni.
+Parte in modo lazy, dentro la prima richiesta che ne ha bisogno: `EnsureStarted` avvia il loop e registra sul token di shutdown una callback che svuota le sottoscrizioni.
 
 ```csharp
 static async Task RequestAsync(string tenant, PriceRefresher refresher, CancellationToken shutdown)
@@ -185,7 +185,7 @@ Il background invece è `acme` per sempre.
 
 **Perché.** `Task.Run` cattura l'`ExecutionContext` corrente, quello della richiesta di `acme`, e ci esegue il delegate.
 Il loop vive in quel contesto finché l'applicazione non si ferma, e ogni `await` dentro il loop riprende nello stesso contesto.
-`CancellationToken.Register` fa lo stesso: cattura il contesto al momento della registrazione e lo usa per il callback, che parte allo shutdown e con `acme` non ha niente a che fare.
+`CancellationToken.Register` fa lo stesso: cattura il contesto al momento della registrazione e lo usa per la callback, che parte allo shutdown e con `acme` non ha niente a che fare.
 Il risultato sono log sbagliati, metriche attribuite al tenant sbagliato e il contesto di quella richiesta tenuto in vita quanto il loop, con tutto ciò a cui puntano i suoi `AsyncLocal`.
 E quale tenant "vince" dipende da quale richiesta arriva per prima dopo l'avvio.
 
@@ -205,7 +205,7 @@ if (suppressFlow)
 ```
 
 - `Task.Run` non ha una variante `Unsafe`: si sospende il flusso intorno alla chiamata. `ExecutionContext.SuppressFlow()` restituisce un `AsyncFlowControl`, e il `using` ripristina il flusso appena il task è partito.
-- Per il token esiste `CancellationToken.UnsafeRegister`, che non cattura l'`ExecutionContext` e non lo fa fluire nel callback.
+- Per il token esiste `CancellationToken.UnsafeRegister`, che non cattura l'`ExecutionContext` e non lo fa fluire nella callback.
 - Il token passato a `Task.Run` è un'altra cosa: `stop.Token`, quello che il loop osserva, e conta solo se viene cancellato prima che il loop parta. `Task.Run` ci si registra con `UnsafeRegister`, quindi non cattura il contesto, in nessuna delle due varianti.
 
 ```text
