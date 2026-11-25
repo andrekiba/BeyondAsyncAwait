@@ -356,3 +356,6 @@ MigrationBackup/
 
 # JetBrains Rider (run configurations and local workspace)
 .idea/
+
+# Claude Code: local instructions, not published
+/CLAUDE.md
