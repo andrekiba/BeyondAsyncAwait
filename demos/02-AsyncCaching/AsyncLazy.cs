@@ -23,6 +23,7 @@ public sealed class AsyncLazy<T>
     Lazy<Task<T>> CreateInstance()
     {
         Lazy<Task<T>>? instance = null;
+        // ReSharper disable once AccessToModifiedClosure
         instance = new Lazy<Task<T>>(() => StartLoad(instance!));
         return instance;
     }
