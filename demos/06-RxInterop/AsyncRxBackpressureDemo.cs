@@ -24,7 +24,7 @@ sealed class AsyncRxBackpressureDemo : Demo
         var provider = new FakeQuoteProvider { Latency = Work };
         var starts = new List<long>();
         long lastEnd = 0;
-        var completed = new TaskCompletionSource<long>();
+        var completed = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         async ValueTask HandleAsync(long tick)
         {

@@ -43,7 +43,7 @@ sealed class AsyncInPipelineDemo : Demo
     {
         Out.Section("Subscribe(async x => ...) — an async void lambda");
         var probe = new Probe();
-        var completed = new TaskCompletionSource<long>();
+        var completed = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         Requests().Subscribe(
             async seq =>

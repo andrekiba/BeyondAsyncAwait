@@ -28,7 +28,7 @@ sealed class AsyncRxBridgeDemo : Demo
         var provider = new FakeQuoteProvider { Latency = Work };
         var ticks = new Subject<Quote>();
         var handled = 0;
-        var done = new TaskCompletionSource();
+        var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         long dropped = 0;
 
         async ValueTask HandleAsync(Quote quote)
